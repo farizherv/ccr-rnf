@@ -79,9 +79,8 @@ Route::prefix('ccr/seat')->group(function () {
     Route::get('/preview/{id}', [ExportSeatController::class, 'preview'])
         ->name('seat.preview');
 
-    // EXPORT WORD — hanya satu!
-    Route::get('/export/word/{id}', [ExportSeatController::class, 'generateSeat'])
-        ->name('seat.export.word');
+    // EXPORT WORD SEAT (DOWNLOAD)
+    Route::get('/export/word/{id}', [ExportSeatController::class, 'generateSeatDownload']);
 
     // BULK DELETE
     Route::delete('/delete-multiple', [CcrSeatController::class, 'deleteMultiple'])

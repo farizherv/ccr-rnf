@@ -4,14 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
-use Illuminate\Support\Facades\Storage;
 use App\Models\CcrReport;
 
 class ExportSeatController extends Controller
 {
     /**
      * ==========================================
-     * 🔥 GENERATE WORD (SAMA PERSIS ENGINE)
+     * 🔥 GENERATE WORD SEAT (SAMA ENGINE)
      * ==========================================
      */
     public function generateSeat($id)
@@ -20,7 +19,7 @@ class ExportSeatController extends Controller
 
         // LOAD TEMPLATE
         $template = new TemplateProcessor(
-            resource_path('templates/TEMPLATE CCR SEAT.docx')
+            public_path('templates/TEMPLATE CCR SEAT.docx')
         );
 
         // HEADER
@@ -30,13 +29,13 @@ class ExportSeatController extends Controller
         $template->setValue('MODEL', $report->model);
         $template->setValue('WO_PR', $report->wo_pr);
         $template->setValue('CUSTOMER', $report->customer);
-        $template->setValue('INSPECTION_DATE', $report->inspection_date->format('Y-m-d'));
+        $template->setValue(
+            'INSPECTION_DATE',
+            optional($report->inspection_date)->format('Y-m-d')
+        );
 
         /**
-         * FOTO FIT FINAL (SAMA ENGINE):
-         * - Width max = 350 px
-         * - Height max = 455 px
-         * - Spacing antar foto = 25 px
+         * FOTO FIT FINAL (SAMA ENGINE)
          */
         $FIXED_WIDTH = 350;
         $MAX_HEIGHT  = 455;
@@ -60,21 +59,18 @@ class ExportSeatController extends Controller
                 $fitWidth  = $FIXED_WIDTH;
                 $fitHeight = $FIXED_WIDTH / $ratio;
 
-                // Kalau terlalu tinggi → height-fit
+                // Jika terlalu tinggi → height-fit
                 if ($fitHeight > $MAX_HEIGHT) {
                     $fitHeight = $MAX_HEIGHT;
                     $fitWidth  = $MAX_HEIGHT * $ratio;
                 }
 
-                // Spasi foto kedua dst.
-                $marginTop = ($index === 0) ? 0 : $SPACING;
-
                 $photoRows[] = [
                     'photo' => [
-                        'path'      => $path,
-                        'width'     => $fitWidth,
-                        'height'    => $fitHeight,
-                        'ratio'     => true
+                        'path'   => $path,
+                        'width'  => $fitWidth,
+                        'height' => $fitHeight,
+                        'ratio'  => true
                     ]
                 ];
             }
@@ -83,10 +79,10 @@ class ExportSeatController extends Controller
             if (empty($photoRows)) {
                 $photoRows[] = [
                     'photo' => [
-                        'path'      => public_path("no-image.png"),
-                        'width'     => 200,
-                        'height'    => 200,
-                        'ratio'     => true
+                        'path'   => public_path('no-image.png'),
+                        'width'  => 200,
+                        'height' => 200,
+                        'ratio'  => true
                     ]
                 ];
             }
@@ -100,7 +96,7 @@ class ExportSeatController extends Controller
         // CLONE ITEM TABLE
         $template->cloneBlock('ITEM_TABLE', count($itemsData), true, true);
 
-        // LOOP SETIAP ITEM
+        // LOOP ITEM
         foreach ($itemsData as $i => $itemData) {
 
             $n = $i + 1;
@@ -109,7 +105,12 @@ class ExportSeatController extends Controller
             $template->setValue("description#{$n}", $itemData['description']);
 
             // CLONE PHOTO BLOCK
-            $template->cloneBlock("PHOTO_BLOCK#{$n}", count($itemData['photos']), true, true);
+            $template->cloneBlock(
+                "PHOTO_BLOCK#{$n}",
+                count($itemData['photos']),
+                true,
+                true
+            );
 
             // INSERT FOTO
             foreach ($itemData['photos'] as $k => $photo) {
@@ -126,7 +127,10 @@ class ExportSeatController extends Controller
         }
 
         // SAVE FILE
-        $fileName = "CCR_SEAT_" . preg_replace('/[^A-Za-z0-9\-]/', '_', $report->unit) . "_" . time() . ".docx";
+        $fileName = "CCR_SEAT_" .
+            preg_replace('/[^A-Za-z0-9\-]/', '_', $report->unit) .
+            "_" . time() . ".docx";
+
         $savePath = storage_path("app/public/" . $fileName);
 
         $template->saveAs($savePath);
@@ -134,10 +138,9 @@ class ExportSeatController extends Controller
         return $savePath;
     }
 
-
     /**
      * ================================
-     * 🔥 PREVIEW HTML (SAMA ENGINE)
+     * 🔥 PREVIEW HTML
      * ================================
      */
     public function preview($id)
@@ -156,7 +159,7 @@ class ExportSeatController extends Controller
         $filePath = $this->generateSeat($id);
 
         if (!file_exists($filePath)) {
-            abort(404, "File Word tidak ditemukan.");
+            abort(404, 'File Word tidak ditemukan.');
         }
 
         return response()->download($filePath, basename($filePath));
