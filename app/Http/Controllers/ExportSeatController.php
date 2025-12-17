@@ -164,4 +164,6 @@ class ExportSeatController extends Controller
 
         return response()->download($filePath, basename($filePath));
     }
+
 }
+
