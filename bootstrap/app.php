@@ -7,16 +7,16 @@ use Illuminate\Foundation\Configuration\Middleware;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
-        commands: __DIR__.'/../routes/console.php',
+        commands: __DIR__.'/../routes/console.php', // ✅ BUKAN console:
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // ✅ alias middleware "role"
+        $middleware->alias([
+            'role' => \App\Http\Middleware\RoleMiddleware::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
     })
-    ->withProviders([
-        App\Providers\AppServiceProvider::class,
-    ])
     ->create();

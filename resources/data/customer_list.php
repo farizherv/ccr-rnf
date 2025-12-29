@@ -75,6 +75,6 @@ return [
     "PT. Tunggal Perkasa Group",
     "PT. Unggul Diesel Part",
     "PT. Patra Dharma Wijaya",
-    "PT. Trakindo Utama",
+    "PT. Rezeki Nadh Fathan",
     "Sigit Bimantutewo",
 ];

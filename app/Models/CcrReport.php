@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CcrReport extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'ccr_reports';
 
@@ -23,10 +24,16 @@ class CcrReport extends Model
         'wo_pr',
         'customer',
         'inspection_date',
+        'docx_path',
+        'docx_generated_at',
+        'purge_at',
     ];
 
     protected $casts = [
-        'inspection_date' => 'date:Y-m-d',
+        'inspection_date'   => 'datetime',
+        'docx_generated_at' => 'datetime',
+        'purge_at'          => 'datetime',
+        'deleted_at'        => 'datetime',
     ];
 
     public function items()
@@ -34,18 +41,15 @@ class CcrReport extends Model
         return $this->hasMany(CcrItem::class, 'ccr_report_id');
     }
 
-    /**
-     * ALL PHOTOS via ITEM (CCR Report → Item → Photo)
-     */
     public function photos()
     {
         return $this->hasManyThrough(
             CcrPhoto::class,
             CcrItem::class,
-            'ccr_report_id', // foreign key di CcrItem menuju report
-            'ccr_item_id',   // foreign key di CcrPhoto menuju item
-            'id',            // kunci utama CcrReport
-            'id'             // kunci utama CcrItem
+            'ccr_report_id', // FK di CcrItem
+            'ccr_item_id',   // FK di CcrPhoto
+            'id',            // PK di CcrReport
+            'id'             // PK di CcrItem
         );
     }
 }

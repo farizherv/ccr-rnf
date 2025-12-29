@@ -5,9 +5,27 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
 use App\Models\CcrReport;
+use Illuminate\Support\Facades\Storage;
+
 
 class ExportEngineController extends Controller
 {
+    
+    private function safeFolder($text)
+    {
+    $text = trim((string) $text);
+    $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
+    $text = preg_replace('/\s+/', ' ', $text);
+    return $text !== '' ? $text : 'UNKNOWN';
+    }
+
+    private function normalizeGroupFolder($group)
+    {
+    $group = $this->safeFolder($group);
+    if (strtolower($group) === 'operator seat') return 'Seat Operator';
+    return $group;
+    }
+
     /**
      * ==========================================
      * 🔥 GENERATE WORD ENGINE
@@ -49,10 +67,15 @@ class ExportEngineController extends Controller
 
             foreach ($item->photos as $index => $photo) {
 
-                $path = public_path("storage/" . $photo->path);
+                $path = Storage::disk('public')->path($photo->path);
                 if (!file_exists($path)) continue;
 
-                list($w, $h) = getimagesize($path);
+                try {
+                    [$w, $h] = getimagesize($path);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+
                 $ratio = $w / $h;
 
                 // Width-fit default
@@ -78,16 +101,9 @@ class ExportEngineController extends Controller
 
             // Jika tidak ada foto
             if (empty($photoRows)) {
-                $photoRows[] = [
-                    'photo' => [
-                        'path'      => public_path('no-image.png'),
-                        'width'     => 200,
-                        'height'    => 200,
-                        'ratio'     => true,
-                        'alignment' => 'center'
-                    ]
-                ];
+                $photoRows[] = ['photo' => null];
             }
+
 
             $itemsData[] = [
                 'description' => $item->description ?: '-',
@@ -114,30 +130,75 @@ class ExportEngineController extends Controller
                 true
             );
 
-            // INSERT FOTO
-            foreach ($itemData['photos'] as $k => $photo) {
+            $blank = public_path('blank.png');
 
+            foreach ($itemData['photos'] as $k => $photo) {
                 $m = $k + 1;
+
+                if ($photo['photo'] === null) {
+                    $template->setImageValue("photo#{$n}#{$m}", [
+                        'path' => $blank,
+                        'width' => 1,
+                        'height' => 1,
+                        'ratio' => true,
+                    ]);
+                    $template->setValue("photo_text#{$n}#{$m}", "NO PHOTO");
+                    continue;
+                }
 
                 $template->setImageValue("photo#{$n}#{$m}", [
                     'path'   => $photo['photo']['path'],
                     'width'  => $photo['photo']['width'],
                     'height' => $photo['photo']['height'],
-                    'ratio'  => true
+                    'ratio'  => true,
                 ]);
+                $template->setValue("photo_text#{$n}#{$m}", "");
             }
+
         }
 
-        // SAVE WORD FILE
-        $fileName = "CCR_ENGINE_" .
-            preg_replace('/[^A-Za-z0-9\-]/', '_', $report->component) .
-            "_" . time() . ".docx";
+        // SAVE WORD FILE (rapi + update docx_path)
+        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
+        $customer    = $this->safeFolder($report->customer);
+        $component   = $this->safeFolder($report->component);
+        $model       = $this->safeFolder($report->model);
+        $reportId    = $report->id;
 
-        $savePath = storage_path("app/public/" . $fileName);
+        $fileName = "CCR_ENGINE.docx";
+
+        // relative path untuk disk public
+        $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$model}/{$reportId}/Export/{$fileName}";
+
+        // pastikan foldernya ada
+        Storage::disk('public')->makeDirectory(dirname($relativePath));
+
+        // absolute path untuk saveAs
+        $savePath = storage_path('app/public/' . $relativePath);
 
         $template->saveAs($savePath);
 
+        // simpan path ke DB
+        $report->docx_path = $relativePath;
+        $report->save();
+
         return $savePath;
+
+    }
+
+    /**
+     * ================================
+     * 🔥 PREVIEW ENGINE
+     * ================================
+     */
+    public function previewPdf($id)
+    {
+        $report = CcrReport::with('items.photos')->findOrFail($id);
+
+        // Kalau kamu memang mau preview halaman (bukan PDF), gunakan view preview
+        return view('engine.preview', compact('report'));
+
+        // Kalau view kamu bukan engine.preview, ganti sesuai file view yang ada:
+        // return view('engine.show', compact('report'));
     }
 
     /**
@@ -147,6 +208,15 @@ class ExportEngineController extends Controller
      */
     public function downloadEngine($id)
     {
+        $report = CcrReport::findOrFail($id);
+
+        // kalau sudah pernah dibuat dan filenya masih ada, langsung download
+        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
+            $abs = storage_path('app/public/' . $report->docx_path);
+            return response()->download($abs, basename($abs));
+        }
+
+        // kalau belum ada, baru generate
         $filePath = $this->generateEngine($id);
 
         if (!file_exists($filePath)) {
@@ -155,4 +225,5 @@ class ExportEngineController extends Controller
 
         return response()->download($filePath, basename($filePath));
     }
+
 }

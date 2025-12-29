@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\CcrReport;
 use App\Models\CcrItem;
 use App\Models\CcrPhoto;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\CcrSubmittedNotification;
+use Illuminate\Support\Facades\Auth;
+use App\Support\Inbox; 
+
 
 class CcrSeatController extends Controller
 {
@@ -275,33 +281,75 @@ class CcrSeatController extends Controller
     // ===========================================================
     public function deleteMultiple(Request $request)
     {
-        $ids = $request->ids;
+        $ids = $request->input('ids', []);
 
-        if (!$ids || !is_array($ids)) {
-            return back()->with('error', 'Tidak ada file yang dipilih.');
-        }
+        CcrReport::whereIn('id', $ids)->get()->each(function ($r) {
+            $r->purge_at = now()->addDays(7);
+            $r->save();
+            $r->delete(); // masuk Trash (soft delete)
+        });
 
-        $reports = CcrReport::whereIn('id', $ids)->get();
-
-        foreach ($reports as $report) {
-            foreach ($report->items as $item) {
-                foreach ($item->photos as $photo) {
-                    Storage::disk('public')->delete($photo->path);
-                    $photo->delete();
-                }
-                $item->delete();
-            }
-            $report->delete();
-        }
-
-        return redirect()->route('ccr.manage.seat')
-            ->with('success', 'CCR Operator Seat terpilih berhasil dihapus!');
+        return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
     }
 
+    //preview seat
     public function preview($id)
     {
     $report = \App\Models\CcrReport::with('items.photos')->findOrFail($id);
     return view('seat.preview', compact('report'));
+    }
+
+
+    // SUBMIT TO DIREKTUR (Submit / Re-submit)
+    public function submit(Request $request, int $id)
+    {
+        $report = CcrReport::findOrFail($id);
+
+        $resubmit = $request->boolean('resubmit'); // dari hidden input resubmit=1
+
+        // ✅ blok kalau masih antri / sedang direview
+        if (in_array($report->approval_status, ['waiting', 'in_review'])) {
+            return back()->with('error', 'CCR ini sedang menunggu persetujuan Direktur.');
+        }
+
+        // ✅ kalau sudah approved, hanya boleh submit lagi kalau resubmit=1
+        if ($report->approval_status === 'approved' && !$resubmit) {
+            return back()->with('error', 'CCR ini sudah Approved. Gunakan tombol Re-submit jika ingin kirim ulang.');
+        }
+
+        // ✅ submit/resubmit -> masuk monitoring direktur
+        $report->approval_status = 'waiting';
+        $report->submitted_by    = auth()->id();
+        $report->submitted_at    = now();
+
+        // optional: bersihkan note lama biar tidak membingungkan saat resubmit
+        if ($resubmit) {
+            $report->director_note = null;
+        }
+
+        $report->save();
+
+        // ✅ nama component untuk title notif (hindari CCR #id)
+        $componentName = trim((string) ($report->component ?? ''));
+        if ($componentName === '') {
+            $componentName = 'Seat'; // fallback kalau field component kosong
+        }
+
+        // ✅ kirim notif ke Director setelah submit
+        $openUrl = route('director.monitoring', ['open' => $report->id], false) . '#r-' . $report->id;
+
+        Inbox::toRoles(['director'], [
+            'type'    => 'seat_submitted',
+            'title'   => $componentName,
+            'message' => 'Disubmit oleh ' . auth()->user()->name . '.',
+            'url'     => $openUrl,
+        ], auth()->id());
+
+
+        return back()->with('success', $resubmit
+            ? 'CCR Seat berhasil di Re-submit ke Direktur.'
+            : 'CCR Seat berhasil dikirim ke Direktur.'
+        );
     }
 
 }

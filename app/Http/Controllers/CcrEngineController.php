@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\CcrReport;
 use App\Models\CcrItem;
 use App\Models\CcrPhoto;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
+use App\Notifications\CcrSubmittedNotification;
+use Illuminate\Support\Facades\Auth;
+use App\Support\Inbox; 
+
 
 class CcrEngineController extends Controller
 {
@@ -290,44 +295,73 @@ class CcrEngineController extends Controller
     // ===========================================================
     public function deleteMultiple(Request $request)
     {
-    $ids = $request->ids;
+        $ids = $request->input('ids', []);
 
-    if (!$ids || !is_array($ids)) {
-        return back()->with('error', 'Tidak ada file yang dipilih.');
+        CcrReport::whereIn('id', $ids)->get()->each(function ($r) {
+            $r->purge_at = now()->addDays(7);
+            $r->save();
+            $r->delete(); // masuk Trash (soft delete)
+        });
+
+        return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
     }
 
-    // Ambil semua report
-    $reports = CcrReport::whereIn('id', $ids)->get();
-
-    foreach ($reports as $report) {
-
-        // Hapus semua item & foto
-        foreach ($report->items as $item) {
-
-            foreach ($item->photos as $photo) {
-                \Storage::disk('public')->delete($photo->path);
-                $photo->delete();
-            }
-
-            $item->delete();
-        }
-
-        // Hapus header CCR
-        $report->delete();
-    }
-
-    // ============================
-    // FINALISASI REDIRECT DI SINI
-    // ============================
-    return redirect()->route('ccr.manage.engine')
-        ->with('success', 'CCR Engine terpilih berhasil dihapus!');
-    }
 
     //PREVIEW LIHAT
     public function previewEngine($id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);  
         return view('engine.preview', compact('report'));
+    }
+
+
+    // SUBMIT TO DIREKTUR (Submit / Re-submit)
+    public function submit(Request $request, int $id)
+    {
+        $report = CcrReport::findOrFail($id);
+
+        $resubmit = $request->boolean('resubmit');
+
+        // ✅ blok kalau masih antri / sedang direview
+        if (in_array($report->approval_status, ['waiting', 'in_review'])) {
+            return back()->with('error', 'CCR ini sedang menunggu persetujuan Direktur.');
+        }
+
+        // ✅ kalau sudah approved, hanya boleh submit lagi kalau resubmit=1
+        if ($report->approval_status === 'approved' && !$resubmit) {
+            return back()->with('error', 'CCR ini sudah Approved. Gunakan tombol Re-submit jika ingin kirim ulang.');
+        }
+
+        // ✅ submit/resubmit -> masuk monitoring direktur
+        $report->approval_status = 'waiting';
+        $report->submitted_by    = auth()->id();
+        $report->submitted_at    = now();
+
+        if ($resubmit) {
+            $report->director_note = null;
+        }
+
+        $report->save();
+
+        // ✅ nama component untuk title notif (hindari CCR #id)
+        $componentName = trim((string) ($report->component ?? ''));
+        if ($componentName === '') $componentName = 'Engine';
+
+        // ✅ link aman untuk Director + highlight barisnya
+        // pastikan route name ini memang ada di web.php
+        $openUrl = route('director.monitoring', ['open' => $report->id], false) . '#r-' . $report->id;
+
+        Inbox::toRoles(['director'], [
+            'type'    => 'engine_submitted',
+            'title'   => $componentName,
+            'message' => 'Disubmit oleh ' . (auth()->user()->name ?? 'User') . '.',
+            'url'     => $openUrl,
+        ], auth()->id());
+
+        return back()->with('success', $resubmit
+            ? 'CCR Engine berhasil di Re-submit ke Direktur.'
+            : 'CCR Engine berhasil dikirim ke Direktur.'
+        );
     }
 
     

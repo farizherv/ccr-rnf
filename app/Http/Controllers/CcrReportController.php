@@ -29,28 +29,24 @@ class CcrReportController extends Controller
         return view('ccr.edit-menu');
     }
 
-
-    // =====================================================================
     // LIST CCR ENGINE UNTUK DI EDIT
-    // =====================================================================
     public function editEngineList()
     {
         $reports = CcrReport::where('group_folder', 'Engine')
-                            ->orderBy('inspection_date', 'desc')
-                            ->get();
+            ->whereNull('deleted_at')
+            ->orderBy('inspection_date', 'desc')
+            ->get();
 
         return view('ccr.manage-engine', compact('reports'));
     }
 
-
-    // =====================================================================
     // LIST CCR OPERATOR SEAT UNTUK DI EDIT
-    // =====================================================================
     public function editSeatList()
     {
         $reports = CcrReport::where('group_folder', 'Operator Seat')
-                            ->orderBy('inspection_date', 'desc')
-                            ->get();
+            ->whereNull('deleted_at')
+            ->orderBy('inspection_date', 'desc')
+            ->get();
 
         return view('ccr.manage-seat', compact('reports'));
     }

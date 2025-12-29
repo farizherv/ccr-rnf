@@ -44,8 +44,14 @@
         <p>Lihat & ubah semua data laporan CCR Operator Seat.</p>
     </a>
 
-</div>
+    {{-- ✅ TRASH harus ikut container ini --}}
+    <a href="{{ route('trash.menu') }}" class="menu-card edit-card trash-card">
+        <div class="menu-icon">🗑️</div>
+        <h2>TRASH & RESTORE</h2>
+        <p>Lihat data yang dihapus, restore, atau hapus permanen.</p>
+    </a>
 
+</div>
 
 
 {{-- ======================= STYLE FINAL (MATCH WITH MAIN PAGE) ======================= --}}
@@ -145,6 +151,15 @@
 
     .edit-card {
         border-left: 6px solid #0D6EFD;
+    }
+
+    /* khusus card trash di edit-menu */
+    .trash-card{
+        border-left: 6px solid #2b2d2f !important; /* hitam gelap */
+    }
+
+    .trash-card:hover{
+        box-shadow: 0 6px 20px rgba(0,0,0,0.18);
     }
 
     .edit-card:hover {

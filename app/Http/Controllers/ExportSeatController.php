@@ -5,9 +5,51 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
 use App\Models\CcrReport;
+use Illuminate\Support\Facades\Storage;
+
 
 class ExportSeatController extends Controller
 {
+
+    private function safeFolder($text)
+    {
+    $text = trim((string) $text);
+    $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
+    $text = preg_replace('/\s+/', ' ', $text);
+    return $text !== '' ? $text : 'UNKNOWN';
+    }
+
+    private function normalizeGroupFolder($group)
+    {
+    $group = $this->safeFolder($group);
+    // samakan dengan folder NAS kamu
+    if (strtolower($group) === 'operator seat') return 'Seat Operator';
+    return $group;
+    }
+
+    
+    private function publicDiskAbsPath($maybePath)
+    {
+        $raw = ltrim((string) $maybePath, '/');
+
+        // normalisasi prefix yang sering kejadian
+        $raw = preg_replace('#^(storage/|public/)#', '', $raw);
+        $raw = preg_replace('#^storage/public/#', '', $raw);
+
+        // kalau memang path relatif disk public
+        if (Storage::disk('public')->exists($raw)) {
+            return Storage::disk('public')->path($raw);
+        }
+
+        // kalau ternyata DB nyimpan absolute path
+        if (is_file($maybePath)) {
+            return $maybePath;
+        }
+
+        return null;
+    }
+
+
     /**
      * ==========================================
      * 🔥 GENERATE WORD SEAT (SAMA ENGINE)
@@ -49,10 +91,15 @@ class ExportSeatController extends Controller
 
             foreach ($item->photos as $index => $photo) {
 
-                $path = public_path("storage/" . $photo->path);
-                if (!file_exists($path)) continue;
+                $path = $this->publicDiskAbsPath($photo->path);
+                if (!$path) continue;
 
-                list($w, $h) = getimagesize($path);
+                try {
+                    [$w, $h] = getimagesize($path);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+
                 $ratio = $w / $h;
 
                 // Default width-fit
@@ -77,21 +124,16 @@ class ExportSeatController extends Controller
 
             // Jika tidak ada foto
             if (empty($photoRows)) {
-                $photoRows[] = [
-                    'photo' => [
-                        'path'   => public_path('no-image.png'),
-                        'width'  => 200,
-                        'height' => 200,
-                        'ratio'  => true
-                    ]
-                ];
+                $photoRows[] = ['photo' => null];
             }
 
+            
             $itemsData[] = [
                 'description' => $item->description ?: '-',
                 'photos'      => $photoRows
             ];
-        }
+        
+        }   
 
         // CLONE ITEM TABLE
         $template->cloneBlock('ITEM_TABLE', count($itemsData), true, true);
@@ -112,35 +154,68 @@ class ExportSeatController extends Controller
                 true
             );
 
-            // INSERT FOTO
-            foreach ($itemData['photos'] as $k => $photo) {
+            $blank = public_path('blank.png');
 
+            foreach ($itemData['photos'] as $k => $photo) {
                 $m = $k + 1;
 
+                // ✅ kalau tidak ada foto
+                if ($photo['photo'] === null) {
+                    $template->setImageValue("photo#{$n}#{$m}", [
+                        'path'   => $blank,
+                        'width'  => 1,
+                        'height' => 1,
+                        'ratio'  => true,
+                    ]);
+                    $template->setValue("photo_text#{$n}#{$m}", "NO PHOTO");
+                    continue;
+                }
+
+                // ✅ kalau ada foto
                 $template->setImageValue("photo#{$n}#{$m}", [
                     'path'   => $photo['photo']['path'],
                     'width'  => $photo['photo']['width'],
                     'height' => $photo['photo']['height'],
-                    'ratio'  => true
+                    'ratio'  => true,
                 ]);
+                $template->setValue("photo_text#{$n}#{$m}", "");
             }
+
+
         }
 
         // SAVE FILE
-        $fileName = "CCR_SEAT_" .
-            preg_replace('/[^A-Za-z0-9\-]/', '_', $report->unit) .
-            "_" . time() . ".docx";
+        // SAVE WORD FILE (rapi + update docx_path)
+        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
+        $customer    = $this->safeFolder($report->customer);
+        $component   = $this->safeFolder($report->component);
+        $unit        = $this->safeFolder($report->unit);
+        $reportId    = $report->id;
 
-        $savePath = storage_path("app/public/" . $fileName);
+        $fileName = "CCR_SEAT.docx";
+
+        // relative path untuk disk public
+        $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$unit}/{$reportId}/Export/{$fileName}";
+
+        // pastikan foldernya ada
+        Storage::disk('public')->makeDirectory(dirname($relativePath));
+
+        // absolute path untuk saveAs
+        $savePath = storage_path('app/public/' . $relativePath);
 
         $template->saveAs($savePath);
 
+        // simpan path ke DB
+        $report->docx_path = $relativePath;
+        $report->save();
+
         return $savePath;
+
     }
 
     /**
      * ================================
-     * 🔥 PREVIEW HTML
+     * 🔥 PREVIEW SEAT
      * ================================
      */
     public function preview($id)
@@ -156,6 +231,15 @@ class ExportSeatController extends Controller
      */
     public function generateSeatDownload($id)
     {
+        $report = CcrReport::findOrFail($id);
+
+        // kalau sudah pernah dibuat dan filenya masih ada, langsung download
+        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
+            $abs = storage_path('app/public/' . $report->docx_path);
+            return response()->download($abs, basename($abs));
+        }
+
+        // kalau belum ada, baru generate
         $filePath = $this->generateSeat($id);
 
         if (!file_exists($filePath)) {
