@@ -12,11 +12,14 @@ class CcrPhoto extends Model
     ];
 
     // FOTO MILIK ITEM
-    protected $touches = ['item'];
-
     public function item()
     {
-        return $this->belongsTo(CcrItem::class, 'ccr_item_id');
+        return $this->belongsTo(\App\Models\CcrItem::class, 'ccr_item_id');
     }
+
+    // setiap photo berubah, item->updated_at naik,
+    // lalu item akan touch report (karena CcrItem punya $touches)
+    protected $touches = ['item'];
+
 
 }

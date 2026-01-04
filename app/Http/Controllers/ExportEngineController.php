@@ -38,7 +38,7 @@ class ExportEngineController extends Controller
         }
 
         // kalau ternyata DB nyimpan absolute path
-        if (is_file($maybePath)) {
+        if (is_string($maybePath) && is_file($maybePath)) {
             return $maybePath;
         }
 
@@ -65,6 +65,7 @@ class ExportEngineController extends Controller
         $template->setValue('SN', (string) $report->sn);
         $template->setValue('SMU', (string) $report->smu);
         $template->setValue('CUSTOMER', (string) $report->customer);
+
         $template->setValue(
             'INSPECTION_DATE',
             optional($report->inspection_date)->format('Y-m-d')
@@ -89,7 +90,8 @@ class ExportEngineController extends Controller
                     continue;
                 }
 
-                if ($h == 0) continue;
+                if (!$h) continue;
+
                 $ratio = $w / $h;
 
                 $fitWidth  = $FIXED_WIDTH;
@@ -161,7 +163,7 @@ class ExportEngineController extends Controller
             }
         }
 
-        // SAVE WORD FILE (rapi + update docx_path)
+        // SAVE WORD FILE
         $groupFolder = $this->normalizeGroupFolder($report->group_folder);
         $customer    = $this->safeFolder($report->customer);
         $component   = $this->safeFolder($report->component);
@@ -173,7 +175,7 @@ class ExportEngineController extends Controller
 
         Storage::disk('public')->makeDirectory(dirname($relativePath));
 
-        // kalau ada file lama, hapus dulu biar gak “ketuker”
+        // kalau ada file lama, hapus dulu
         if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
             Storage::disk('public')->delete($report->docx_path);
         }
@@ -181,18 +183,15 @@ class ExportEngineController extends Controller
         $savePath = storage_path('app/public/' . $relativePath);
         $template->saveAs($savePath);
 
-        $report->docx_path = $relativePath;
-        $report->docx_generated_at = now();
-        $report->save();
+        // update metadata docx
+        $report->forceFill([
+            'docx_path'         => $relativePath,
+            'docx_generated_at' => now(),
+        ])->save();
 
         return $savePath;
     }
 
-    /**
-     * ================================
-     * 🔥 PREVIEW ENGINE
-     * ================================
-     */
     public function previewPdf($id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
@@ -200,30 +199,47 @@ class ExportEngineController extends Controller
     }
 
     /**
-     * ================================
-     * 🔥 DOWNLOAD WORD ENGINE (AUTO-REGENERATE)
-     * ================================
+     * ==========================================
+     * ✅ DOWNLOAD WORD ENGINE (AUTO-REGENERATE IF STALE)
+     * ==========================================
      */
     public function downloadEngine($id)
     {
-        $report = CcrReport::findOrFail($id);
+        // IMPORTANT: ambil updated_at + docx_generated_at
+        $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        // Kalau sudah ada file dan masih ada di storage, langsung pakai
-        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
-            $abs = Storage::disk('public')->path($report->docx_path);
-        } else {
-            // Kalau belum ada, generate dulu (method kamu return absolute path)
+        $docxExists = $report->docx_path && Storage::disk('public')->exists($report->docx_path);
+
+        // stale jika: file tidak ada, atau belum pernah generate, atau report berubah setelah generate
+        $mustRegen =
+            !$docxExists ||
+            !$report->docx_generated_at ||
+            ($report->updated_at && $report->updated_at->gt($report->docx_generated_at));
+
+        if ($mustRegen) {
+            // hapus docx lama (kalau ada)
+            if ($docxExists) {
+                Storage::disk('public')->delete($report->docx_path);
+            }
+
+            // generate baru
             $abs = $this->generateEngine($id);
+        } else {
+            // pakai existing
+            $abs = Storage::disk('public')->path($report->docx_path);
         }
 
         if (!is_file($abs)) {
             abort(404, 'File Word tidak ditemukan.');
         }
 
-        // ✅ JANGAN pakai ->header() di BinaryFileResponse
+        // biar browser ga cache: bikin filename unik pakai updated_at
+        $ts = $report->updated_at ? $report->updated_at->format('Ymd_His') : now()->format('Ymd_His');
+        $downloadName = "CCR_ENGINE_{$report->id}_{$ts}.docx";
+
         return response()->download(
             $abs,
-            basename($abs),
+            $downloadName,
             [
                 'Content-Type'  => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
@@ -232,5 +248,4 @@ class ExportEngineController extends Controller
             ]
         );
     }
-
 }
