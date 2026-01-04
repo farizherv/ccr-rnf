@@ -272,7 +272,7 @@
                 </div>
                 <div style="font-family:'Times New Roman';font-size:10px;margin-top:3px;line-height:1.1;">
                     JL. Sangga Buana RT. 35 No 54-B Graha Indah Balikpapan Kalimantan Timur 76126 <br>
-                    Telp : 0542-4563163   email : rnadhfathan@yahoo.com
+                    Telp : 0542-4563163   email : sales@rnadhfathan.com
                 </div>
             </div>
 
