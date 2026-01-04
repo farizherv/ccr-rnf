@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\CcrReport;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\TemplateProcessor;
 
@@ -28,21 +27,44 @@ class ExportSeatController extends Controller
     {
         $raw = ltrim((string) $maybePath, '/');
 
-        // normalisasi prefix yang sering kejadian
         $raw = preg_replace('#^(storage/|public/)#', '', $raw);
         $raw = preg_replace('#^storage/public/#', '', $raw);
 
-        // kalau path relatif disk public
         if ($raw !== '' && Storage::disk('public')->exists($raw)) {
             return Storage::disk('public')->path($raw);
         }
 
-        // kalau ternyata DB nyimpan absolute path
-        if (is_string($maybePath) && is_file($maybePath)) {
+        if (is_file($maybePath)) {
             return $maybePath;
         }
 
         return null;
+    }
+
+    private function expectedRelativePath(CcrReport $report): string
+    {
+        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
+        $customer    = $this->safeFolder($report->customer);
+        $component   = $this->safeFolder($report->component);
+        $unit        = $this->safeFolder($report->unit);
+        $reportId    = $report->id;
+
+        $fileName = "CCR_SEAT.docx";
+
+        return "ccr_files/{$groupFolder}/{$customer}/{$component}/{$unit}/{$reportId}/Export/{$fileName}";
+    }
+
+    private function shouldRegenerate(CcrReport $report): bool
+    {
+        $expected = $this->expectedRelativePath($report);
+
+        if (!$report->docx_path || $report->docx_path !== $expected) return true;
+        if (!Storage::disk('public')->exists($report->docx_path)) return true;
+        if (!$report->docx_generated_at) return true;
+
+        if ($report->updated_at && $report->updated_at->gt($report->docx_generated_at)) return true;
+
+        return false;
     }
 
     /**
@@ -65,7 +87,6 @@ class ExportSeatController extends Controller
         $template->setValue('MODEL', (string) $report->model);
         $template->setValue('WO_PR', (string) $report->wo_pr);
         $template->setValue('CUSTOMER', (string) $report->customer);
-
         $template->setValue(
             'INSPECTION_DATE',
             optional($report->inspection_date)->format('Y-m-d')
@@ -90,8 +111,7 @@ class ExportSeatController extends Controller
                     continue;
                 }
 
-                if (!$h) continue;
-
+                if ((int)$h === 0) continue;
                 $ratio = $w / $h;
 
                 $fitWidth  = $FIXED_WIDTH;
@@ -164,18 +184,9 @@ class ExportSeatController extends Controller
         }
 
         // SAVE WORD FILE
-        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
-        $customer    = $this->safeFolder($report->customer);
-        $component   = $this->safeFolder($report->component);
-        $unit        = $this->safeFolder($report->unit);
-        $reportId    = $report->id;
-
-        $fileName = "CCR_SEAT.docx";
-        $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$unit}/{$reportId}/Export/{$fileName}";
-
+        $relativePath = $this->expectedRelativePath($report);
         Storage::disk('public')->makeDirectory(dirname($relativePath));
 
-        // kalau ada file lama, hapus dulu biar gak “ketuker”
         if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
             Storage::disk('public')->delete($report->docx_path);
         }
@@ -183,19 +194,15 @@ class ExportSeatController extends Controller
         $savePath = storage_path('app/public/' . $relativePath);
         $template->saveAs($savePath);
 
-        // update metadata docx
-        $report->forceFill([
-            'docx_path'         => $relativePath,
-            'docx_generated_at' => now(),
-        ])->save();
+        $report->docx_path = $relativePath;
+        $report->docx_generated_at = now();
+        $report->save();
 
         return $savePath;
     }
 
     /**
-     * ================================
-     * 🔥 PREVIEW SEAT
-     * ================================
+     * ✅ PREVIEW SEAT
      */
     public function preview($id)
     {
@@ -204,33 +211,17 @@ class ExportSeatController extends Controller
     }
 
     /**
-     * ==========================================
-     * ✅ DOWNLOAD WORD SEAT (AUTO-REGENERATE IF STALE)
-     * ==========================================
+     * ✅ DOWNLOAD WORD SEAT (AUTO-REGENERATE kalau data berubah)
+     * route kamu mungkin manggil generateSeatDownload — kita keep.
      */
     public function generateSeatDownload($id)
     {
-        // IMPORTANT: ambil updated_at + docx_generated_at
-        $report = CcrReport::with('items.photos')->findOrFail($id);
+        $report = CcrReport::findOrFail($id);
 
-        $docxExists = $report->docx_path && Storage::disk('public')->exists($report->docx_path);
-
-        // stale jika: file tidak ada, atau belum pernah generate, atau report berubah setelah generate
-        $mustRegen =
-            !$docxExists ||
-            !$report->docx_generated_at ||
-            ($report->updated_at && $report->updated_at->gt($report->docx_generated_at));
-
-        if ($mustRegen) {
-            // hapus docx lama (kalau ada)
-            if ($docxExists) {
-                Storage::disk('public')->delete($report->docx_path);
-            }
-
-            // generate baru
+        if ($this->shouldRegenerate($report)) {
             $abs = $this->generateSeat($id);
+            $report->refresh();
         } else {
-            // pakai existing
             $abs = Storage::disk('public')->path($report->docx_path);
         }
 
@@ -238,13 +229,9 @@ class ExportSeatController extends Controller
             abort(404, 'File Word tidak ditemukan.');
         }
 
-        // biar browser ga cache: bikin filename unik pakai updated_at
-        $ts = $report->updated_at ? $report->updated_at->format('Ymd_His') : now()->format('Ymd_His');
-        $downloadName = "CCR_SEAT_{$report->id}_{$ts}.docx";
-
         return response()->download(
             $abs,
-            $downloadName,
+            basename($abs),
             [
                 'Content-Type'  => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
@@ -252,5 +239,11 @@ class ExportSeatController extends Controller
                 'Expires'       => '0',
             ]
         );
+    }
+
+    // alias tambahan biar aman kalau route pakai nama downloadSeat
+    public function downloadSeat($id)
+    {
+        return $this->generateSeatDownload($id);
     }
 }

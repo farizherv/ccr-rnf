@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\CcrReport;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\TemplateProcessor;
 
@@ -38,11 +37,43 @@ class ExportEngineController extends Controller
         }
 
         // kalau ternyata DB nyimpan absolute path
-        if (is_string($maybePath) && is_file($maybePath)) {
+        if (is_file($maybePath)) {
             return $maybePath;
         }
 
         return null;
+    }
+
+    private function expectedRelativePath(CcrReport $report): string
+    {
+        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
+        $customer    = $this->safeFolder($report->customer);
+        $component   = $this->safeFolder($report->component);
+        $model       = $this->safeFolder($report->model);
+        $reportId    = $report->id;
+
+        $fileName = "CCR_ENGINE.docx";
+
+        return "ccr_files/{$groupFolder}/{$customer}/{$component}/{$model}/{$reportId}/Export/{$fileName}";
+    }
+
+    private function shouldRegenerate(CcrReport $report): bool
+    {
+        $expected = $this->expectedRelativePath($report);
+
+        // path kosong / beda folder karena field berubah
+        if (!$report->docx_path || $report->docx_path !== $expected) return true;
+
+        // file hilang
+        if (!Storage::disk('public')->exists($report->docx_path)) return true;
+
+        // belum pernah generate
+        if (!$report->docx_generated_at) return true;
+
+        // data berubah setelah terakhir generate
+        if ($report->updated_at && $report->updated_at->gt($report->docx_generated_at)) return true;
+
+        return false;
     }
 
     /**
@@ -65,7 +96,6 @@ class ExportEngineController extends Controller
         $template->setValue('SN', (string) $report->sn);
         $template->setValue('SMU', (string) $report->smu);
         $template->setValue('CUSTOMER', (string) $report->customer);
-
         $template->setValue(
             'INSPECTION_DATE',
             optional($report->inspection_date)->format('Y-m-d')
@@ -90,8 +120,7 @@ class ExportEngineController extends Controller
                     continue;
                 }
 
-                if (!$h) continue;
-
+                if ((int)$h === 0) continue;
                 $ratio = $w / $h;
 
                 $fitWidth  = $FIXED_WIDTH;
@@ -164,18 +193,10 @@ class ExportEngineController extends Controller
         }
 
         // SAVE WORD FILE
-        $groupFolder = $this->normalizeGroupFolder($report->group_folder);
-        $customer    = $this->safeFolder($report->customer);
-        $component   = $this->safeFolder($report->component);
-        $model       = $this->safeFolder($report->model);
-        $reportId    = $report->id;
-
-        $fileName = "CCR_ENGINE.docx";
-        $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$model}/{$reportId}/Export/{$fileName}";
-
+        $relativePath = $this->expectedRelativePath($report);
         Storage::disk('public')->makeDirectory(dirname($relativePath));
 
-        // kalau ada file lama, hapus dulu
+        // hapus file lama (kalau ada)
         if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
             Storage::disk('public')->delete($report->docx_path);
         }
@@ -183,49 +204,39 @@ class ExportEngineController extends Controller
         $savePath = storage_path('app/public/' . $relativePath);
         $template->saveAs($savePath);
 
-        // update metadata docx
-        $report->forceFill([
-            'docx_path'         => $relativePath,
-            'docx_generated_at' => now(),
-        ])->save();
+        $report->docx_path = $relativePath;
+        $report->docx_generated_at = now();
+        $report->save();
 
         return $savePath;
     }
 
-    public function previewPdf($id)
+    /**
+     * ✅ PREVIEW ENGINE (alias biar route aman)
+     */
+    public function preview($id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
         return view('engine.preview', compact('report'));
     }
 
+    // kalau ada route lama yang manggil previewPdf, tetap aman
+    public function previewPdf($id)
+    {
+        return $this->preview($id);
+    }
+
     /**
-     * ==========================================
-     * ✅ DOWNLOAD WORD ENGINE (AUTO-REGENERATE IF STALE)
-     * ==========================================
+     * ✅ DOWNLOAD WORD ENGINE (AUTO-REGENERATE kalau data berubah)
      */
     public function downloadEngine($id)
     {
-        // IMPORTANT: ambil updated_at + docx_generated_at
-        $report = CcrReport::with('items.photos')->findOrFail($id);
+        $report = CcrReport::findOrFail($id);
 
-        $docxExists = $report->docx_path && Storage::disk('public')->exists($report->docx_path);
-
-        // stale jika: file tidak ada, atau belum pernah generate, atau report berubah setelah generate
-        $mustRegen =
-            !$docxExists ||
-            !$report->docx_generated_at ||
-            ($report->updated_at && $report->updated_at->gt($report->docx_generated_at));
-
-        if ($mustRegen) {
-            // hapus docx lama (kalau ada)
-            if ($docxExists) {
-                Storage::disk('public')->delete($report->docx_path);
-            }
-
-            // generate baru
+        if ($this->shouldRegenerate($report)) {
             $abs = $this->generateEngine($id);
+            $report->refresh();
         } else {
-            // pakai existing
             $abs = Storage::disk('public')->path($report->docx_path);
         }
 
@@ -233,13 +244,9 @@ class ExportEngineController extends Controller
             abort(404, 'File Word tidak ditemukan.');
         }
 
-        // biar browser ga cache: bikin filename unik pakai updated_at
-        $ts = $report->updated_at ? $report->updated_at->format('Ymd_His') : now()->format('Ymd_His');
-        $downloadName = "CCR_ENGINE_{$report->id}_{$ts}.docx";
-
         return response()->download(
             $abs,
-            $downloadName,
+            basename($abs),
             [
                 'Content-Type'  => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
@@ -247,5 +254,11 @@ class ExportEngineController extends Controller
                 'Expires'       => '0',
             ]
         );
+    }
+
+    // alias biar kalau route beda nama tetap gak 500
+    public function download($id)
+    {
+        return $this->downloadEngine($id);
     }
 }

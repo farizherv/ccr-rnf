@@ -4,20 +4,23 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class CcrPhoto extends Model
+class CcrItem extends Model
 {
     protected $fillable = [
-        'ccr_item_id',
-        'path',
+        'ccr_report_id',
+        'description',
     ];
 
-    // FOTO MILIK ITEM
-    public function item()
+    // setiap item berubah, report->updated_at ikut naik
+    protected $touches = ['report'];
+
+    public function report()
     {
-        return $this->belongsTo(\App\Models\CcrItem::class, 'ccr_item_id');
+        return $this->belongsTo(\App\Models\CcrReport::class, 'ccr_report_id');
     }
 
-    // setiap photo berubah -> item->updated_at naik
-    // lalu item akan touch report (karena CcrItem punya $touches)
-    protected $touches = ['item'];
+    public function photos()
+    {
+        return $this->hasMany(\App\Models\CcrPhoto::class, 'ccr_item_id');
+    }
 }
