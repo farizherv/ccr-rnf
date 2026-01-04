@@ -13,7 +13,7 @@
 
         {{-- LOGO SAMA DENGAN HALAMAN UTAMA (115px + proporsional) --}}
         <div class="logo-wrapper">
-            <img src="{{ asset('rnf-logo.png') }}" class="header-logo">
+            <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
         </div>
 
         <div class="header-text">

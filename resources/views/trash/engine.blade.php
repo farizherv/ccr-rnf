@@ -7,7 +7,7 @@
 
   <div class="header-card">
     <div class="header-left">
-      <img src="{{ asset('rnf-logo.png') }}" class="header-logo" alt="RNF Logo">
+      <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
       <div>
         <h1 class="header-title">TRASH & RESTORE – ENGINE</h1>
         <p class="header-subtitle">Restore atau hapus permanen data CCR Engine.</p>

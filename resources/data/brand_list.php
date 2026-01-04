@@ -12,4 +12,5 @@ return [
     'SCANIA',
     'VOLVO',
     'XCMG',
+    'OTHER',
 ];

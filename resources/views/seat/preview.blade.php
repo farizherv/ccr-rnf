@@ -273,7 +273,7 @@
     <a href="{{ route('ccr.manage.seat') }}" class="btn-back">← Kembali ke menu Edit CCR</a>
 
     <div class="preview-header-box">
-        <img src="{{ asset('rnf-logo.png') }}">
+        <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
         <div>
             <div class="preview-title">PREVIEW CCR – OPERATOR SEAT</div>
             <div class="preview-subtitle">Tampilan hasil laporan CCR sebelum diunduh.</div>

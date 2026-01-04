@@ -17,7 +17,7 @@
     <div class="header-card-master">
         <div class="header-content-master">
 
-            <img src="{{ asset('rnf-logo.png') }}" class="header-logo-master">
+            <img src="{{ asset('rnf-logo.png') }}" class="header-logo-master" width="110" height="110" alt="RNF Logo">
 
             <div>
                 <h1 class="header-title-master">EDIT CCR – OPERATOR SEAT</h1>

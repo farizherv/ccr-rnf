@@ -96,4 +96,31 @@ class UserManagementController extends Controller
 
         return redirect()->route('admin.users.index')->with('success', 'User berhasil diupdate.');
     }
+
+    public function destroy(User $user)
+    {   
+    // hanya admin yang boleh hapus (kalau kamu punya role system)
+    if (auth()->user()->role !== 'admin') {
+        return back()->with('error', 'Anda tidak punya akses untuk menghapus user.');
+    }
+
+    // tidak boleh hapus diri sendiri
+    if ($user->id === auth()->id()) {
+        return back()->with('error', 'Tidak bisa menghapus akun yang sedang login.');
+    }
+
+    // tidak boleh hapus admin terakhir
+    $isAdmin = ($user->role === 'admin');
+    if ($isAdmin) {
+        $adminCount = User::where('role', 'admin')->count();
+        if ($adminCount <= 1) {
+            return back()->with('error', 'Tidak bisa menghapus admin terakhir.');
+        }
+    }
+
+    $user->delete();
+
+    return back()->with('success', 'User berhasil dihapus.');
+    }
+    
 }

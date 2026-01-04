@@ -2,24 +2,23 @@
 
 @section('content')
 
+<div class="dm-page" data-page="director-monitoring">
 
-{{-- ======================= BACK BUTTON ======================= --}}
-<a href="{{ route('ccr.index') }}" class="btn-back">← Kembali</a>
+    {{-- ======================= BACK BUTTON ======================= --}}
+    <a href="{{ route('ccr.index') }}" class="btn-back">← Kembali</a>
 
-{{-- ======================= HEADER ======================= --}}
-<div class="header-card">
-    <div class="header-left">
-        <img src="{{ asset('rnf-logo.png') }}" class="header-logo" alt="RNF">
-        <div>
-            <h1 class="header-title">MONITORING DIREKTUR</h1>
-            <p class="header-subtitle">Daftar CCR yang menunggu persetujuan (Approve / Reject).</p>
+    {{-- ======================= HEADER ======================= --}}
+    <div class="header-card">
+        <div class="header-left">
+            <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
+            <div>
+                <h1 class="header-title">MONITORING DIREKTUR</h1>
+                <p class="header-subtitle">Daftar CCR yang menunggu persetujuan (Approve / Reject).</p>
+            </div>
         </div>
     </div>
-</div>
 
-<div class="accent-line"></div>
-
-<div data-page="director-monitoring">
+    <div class="accent-line"></div>
 
     {{-- ======================= FILTER BOX ======================= --}}
     <div class="box">
@@ -35,7 +34,7 @@
             <div class="mon-filter-group mon-filter-search">
                 <label for="searchInputMon">Cari</label>
                 <input id="searchInputMon" type="text" class="input"
-                    placeholder="Cari component, customer, make, model, SN...">
+                       placeholder="Cari component, customer, make, model, SN...">
             </div>
 
             {{-- FILTER CUSTOMER --}}
@@ -213,7 +212,7 @@
 {{-- ======================= FILTER/SORT SCRIPT ======================= --}}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-    const page = document.querySelector('[data-page="director-monitoring"]');
+    const page = document.querySelector('.dm-page[data-page="director-monitoring"]');
     if (!page) return;
 
     const searchInput = page.querySelector("#searchInputMon");
@@ -249,7 +248,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if (t && type !== t) show = false;
 
             card.style.display = show ? "flex" : "none";
-            // divider di bawah card mengikuti display card (optional)
             const divider = card.nextElementSibling;
             if (divider && divider.classList.contains('mon-divider')) {
                 divider.style.display = show ? "block" : "none";
@@ -259,7 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function applySort(){
         cards = Array.from(list.querySelectorAll(".report-card"));
-
         const mode = sortSelect.value;
 
         const sorted = [...cards].sort((a,b) => {
@@ -275,7 +272,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return 0;
         });
 
-        // Append card + divider pasangan
         sorted.forEach(card => {
             const divider = card.nextElementSibling;
             list.appendChild(card);
@@ -295,10 +291,13 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 </script>
 
-{{-- ======================= STYLE ======================= --}}
+{{-- ======================= STYLE (SCOPED) ======================= --}}
 <style>
-/* ========= base ========= */
-.btn-back{
+/* ✅ KUNCI: semua diprefix .dm-page supaya NAV/TOPBAR AMAN */
+.dm-page, .dm-page * , .dm-page *::before, .dm-page *::after { box-sizing: border-box; }
+
+/* BACK */
+.dm-page .btn-back{
     display:inline-block;
     color:white;
     padding:10px 18px;
@@ -311,35 +310,37 @@ document.addEventListener("DOMContentLoaded", () => {
     box-shadow:0 3px 7px rgba(0,0,0,.15);
     margin-bottom:18px;
 }
-.btn-back:hover{ background:#2b2d2f; transform:translateY(-2px) }
+.dm-page .btn-back:hover{ background:#2b2d2f; transform:translateY(-2px) }
 
-.header-card{
+/* HEADER */
+.dm-page .header-card{
     background:white;
     padding:22px;
     border-radius:14px;
     margin-bottom:18px;
     box-shadow:0 3px 10px rgba(0,0,0,.07);
 }
-.header-left{ display:flex; align-items:center; gap:18px }
-.header-logo{ width:74px; height:74px; object-fit:contain }
-.header-title{ font-size:20px; font-weight:900; margin:0; letter-spacing:.2px }
-.header-subtitle{ font-size:14px; color:#555; margin-top:4px }
+.dm-page .header-left{ display:flex; align-items:center; gap:18px }
+.dm-page .header-logo{ width:74px; height:74px; object-fit:contain }
+.dm-page .header-title{ font-size:20px; font-weight:900; margin:0; letter-spacing:.2px }
+.dm-page .header-subtitle{ font-size:14px; color:#555; margin-top:4px }
 
-.accent-line{
+.dm-page .accent-line{
     height:4px;
     background:#9F8170;
     border-radius:20px;
     margin-bottom:18px
 }
 
-.box{
+/* BOX + INPUT (DULUNYA INI YANG NIBAN TOPBAR) */
+.dm-page .box{
     background:white;
     padding:22px;
     border-radius:14px;
     margin-bottom:18px;
     box-shadow:0 3px 10px rgba(0,0,0,.07);
 }
-.input{
+.dm-page .input{
     width:100%;
     padding:12px 14px;
     border-radius:12px;
@@ -348,86 +349,57 @@ document.addEventListener("DOMContentLoaded", () => {
     font-size:14px;
     outline:none;
 }
-
-.input:focus{
+.dm-page .input:focus{
     background:#fff;
-    border-color: rgba(159,129,112,.55); /* #9F8170 */
+    border-color: rgba(159,129,112,.55);
     box-shadow:0 0 0 4px rgba(159,129,112,.18);
 }
+.dm-page .textarea{ resize:vertical; min-height:58px; }
 
-
-.textarea{ resize:vertical; min-height:58px; }
-
-/* ==== penting biar width input ga bikin nabrak ==== */
-*, *::before, *::after { box-sizing: border-box; }
-
-/* ========= filter layout (anti dempet) ========= */
-.mon-filter-grid{
-    display: grid;
-
-    /* Cari dibuat lebih pendek biar ada jarak dengan Customer */
+/* FILTER GRID */
+.dm-page .mon-filter-grid{
+    display:grid;
     grid-template-columns:
-        minmax(280px, 520px)   /* Cari */
-        minmax(220px, 1fr)     /* Customer */
-        minmax(180px, 1fr)     /* Type */
-        minmax(220px, 1fr);    /* Sort */
-
-    column-gap: 22px;  /* ✅ jarak kanan-kiri (ini yang kamu mau) */
-    row-gap: 16px;     /* jarak atas-bawah */
-    align-items: end;
+        minmax(280px, 520px)
+        minmax(220px, 1fr)
+        minmax(180px, 1fr)
+        minmax(220px, 1fr);
+    column-gap:22px;
+    row-gap:16px;
+    align-items:end;
 }
-
-/* biar isi grid boleh mengecil dan ga “dorong” sampai nabrak */
-.mon-filter-group{ min-width: 0; }
-
-.mon-filter-group label{
+.dm-page .mon-filter-group{ min-width:0; }
+.dm-page .mon-filter-group label{
     display:block;
     font-weight:800;
     font-size:13px;
     color:#111827;
     margin-bottom:8px;
 }
-
-/* tablet */
 @media (max-width:1024px){
-    .mon-filter-grid{
-        grid-template-columns: 1fr 1fr;
-        column-gap: 16px;
-        row-gap: 14px;
-    }
-    .mon-filter-search{ grid-column: 1 / -1; } /* search full width */
+    .dm-page .mon-filter-grid{ grid-template-columns:1fr 1fr; column-gap:16px; row-gap:14px; }
+    .dm-page .mon-filter-search{ grid-column:1 / -1; }
 }
-
-/* mobile */
 @media (max-width:600px){
-    .mon-filter-grid{
-        grid-template-columns: 1fr;
-        column-gap: 0;
-        row-gap: 12px;
-    }
+    .dm-page .mon-filter-grid{ grid-template-columns:1fr; column-gap:0; row-gap:12px; }
 }
 
-
-/* ========= card layout ========= */
-.mon-card{
+/* CARD */
+.dm-page .mon-card{
     display:flex;
     justify-content:space-between;
     gap:18px;
     padding:18px 14px;
     border-radius:16px;
     border:1px solid #eef2f7;
-    background: #ffffff;
+    background:#ffffff;
 }
-.mon-divider{
-    height:1px;
-    background:#eef2f7;
-    margin:14px 0;
-}
+.dm-page .mon-divider{ height:1px; background:#eef2f7; margin:14px 0; }
 
-.mon-left{ flex:1; min-width:0; }
-.mon-right{ width: 520px; max-width: 520px; }
+.dm-page .mon-left{ flex:1; min-width:0; }
+.dm-page .mon-right{ width:520px; max-width:520px; }
 
-.mon-title-row{
+.dm-page .mon-title-row{
     display:flex;
     align-items:center;
     justify-content:flex-start;
@@ -435,7 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
     flex-wrap:wrap;
     margin-bottom:10px;
 }
-.mon-title strong{
+.dm-page .mon-title strong{
     font-size:18px;
     font-weight:900;
     line-height:1.2;
@@ -443,7 +415,8 @@ document.addEventListener("DOMContentLoaded", () => {
     word-break:break-word;
 }
 
-.type-pill{
+/* TYPE PILL */
+.dm-page .type-pill{
     display:inline-flex;
     align-items:center;
     padding:6px 12px;
@@ -453,55 +426,31 @@ document.addEventListener("DOMContentLoaded", () => {
     letter-spacing:.4px;
     border:2px solid transparent;
 }
-
-.type-seat,
-.type-engine{
+.dm-page .type-seat,
+.dm-page .type-engine{
     color:#9F8170;
     background: rgba(159,129,112,.12);
     border-color: rgba(159,129,112,.28);
 }
 
-/* meta pills */
-.mon-meta{
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-}
-.meta-pill{
+/* META */
+.dm-page .mon-meta{ display:flex; flex-wrap:wrap; gap:10px; }
+.dm-page .meta-pill{
     background:#f3f4f6;
     padding:7px 12px;
     border-radius:999px;
     font-size:13px;
     color:#374151;
 }
-.meta-pill b{ color:#111827; }
+.dm-page .meta-pill b{ color:#111827; }
+.dm-page .wita{ font-weight:900; color:#E40505; margin-left:6px; }
+.dm-page .meta-inspection{ background: rgba(13,110,253,.08); border:1px solid rgba(13,110,253,.15); }
+.dm-page .meta-submitted{ background: rgba(159,129,112,.10); border:1px solid rgba(159,129,112,.28); }
+.dm-page .meta-submitted b{ color:#6b4f42; }
 
-.wita{
-    font-weight:900;
-    color:#E40505;
-    margin-left:6px;
-}
-
-/* inspection & submitted special */
-.meta-inspection{
-    background: rgba(13,110,253,.08);
-    border:1px solid rgba(13,110,253,.15);
-}
-.meta-submitted{
-    background: rgba(159,129,112,.10);         /* ✅ sesuai request */
-    border:1px solid rgba(159,129,112,.28);
-}
-.meta-submitted b{ color:#6b4f42; }
-
-/* ========= right panel ========= */
-.action-top{
-    display:flex;
-    justify-content:flex-end;
-    gap:12px;
-    margin-bottom:12px;
-}
-
-.btn-pill{
+/* ACTION */
+.dm-page .action-top{ display:flex; justify-content:flex-end; gap:12px; margin-bottom:12px; }
+.dm-page .btn-pill{
     display:inline-flex;
     align-items:center;
     justify-content:center;
@@ -515,12 +464,12 @@ document.addEventListener("DOMContentLoaded", () => {
     box-shadow:0 10px 18px rgba(0,0,0,.10);
     transition:.18s;
 }
-.btn-pill:hover{ transform:translateY(-1px); filter:brightness(.98); }
+.dm-page .btn-pill:hover{ transform:translateY(-1px); filter:brightness(.98); }
+.dm-page .btn-preview{ background:#F57C00; }
+.dm-page .btn-edit{ background:#6b7075; }
 
-.btn-preview{ background:#F57C00; }
-.btn-edit{ background:#6b7075; }
-
-.panel{
+/* PANEL */
+.dm-page .panel{
     background:#fff;
     border:1px solid #eef2f7;
     border-radius:16px;
@@ -528,16 +477,16 @@ document.addEventListener("DOMContentLoaded", () => {
     margin-bottom:12px;
     box-shadow:0 10px 25px rgba(0,0,0,.05);
 }
-.panel-label{
+.dm-page .panel-label{
     display:block;
     font-weight:900;
     font-size:13px;
     margin-bottom:8px;
     color:#111827;
 }
-.req{ color:#E40505; }
+.dm-page .req{ color:#E40505; }
 
-.btn-action{
+.dm-page .btn-action{
     width:100%;
     margin-top:10px;
     border:none;
@@ -550,42 +499,28 @@ document.addEventListener("DOMContentLoaded", () => {
     box-shadow:0 18px 35px rgba(0,0,0,.10);
     transition:.18s;
 }
-.btn-action:hover{ transform:translateY(-1px); }
+.dm-page .btn-action:hover{ transform:translateY(-1px); }
+.dm-page .btn-approve{ background:#22c55e; }
+.dm-page .btn-reject{ background:#ef4444; }
 
-.btn-approve{ background:#22c55e; }
-.btn-reject{ background:#ef4444; }
-
-.error-text{
+.dm-page .error-text{
     margin-top:8px;
     font-weight:800;
     color:#E40505;
     font-size:13px;
 }
 
-/* ========= responsive card ========= */
+/* RESPONSIVE */
 @media (max-width:1024px){
-    .mon-card{
-        flex-direction:column;
-        align-items:stretch;
-    }
-    .mon-right{
-        width:100%;
-        max-width:100%;
-    }
-    .action-top{
-        justify-content:flex-start;
-    }
+    .dm-page .mon-card{ flex-direction:column; align-items:stretch; }
+    .dm-page .mon-right{ width:100%; max-width:100%; }
+    .dm-page .action-top{ justify-content:flex-start; }
 }
-
 @media (max-width:600px){
-    .btn-pill{ width:100%; }
-    .action-top{
-        flex-direction:column;
-        align-items:stretch;
-    }
-    .meta-pill{ max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
+    .dm-page .btn-pill{ width:100%; }
+    .dm-page .action-top{ flex-direction:column; align-items:stretch; }
+    .dm-page .meta-pill{ max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
 }
-
 </style>
 
 @endsection

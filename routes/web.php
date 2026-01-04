@@ -27,8 +27,12 @@ use App\Http\Controllers\InboxController;
 // ==================================================================
 Route::redirect('/', '/dashboard');
 
-// Breeze auth routes
-require __DIR__.'/auth.php';
+// ==================================================================
+// AUTH (Login / Register / Forgot / Reset) => NO CACHE
+// ==================================================================
+Route::middleware('nocache')->group(function () {
+    require __DIR__ . '/auth.php';
+});
 
 // ==================================================================
 // SEMUA FITUR WAJIB LOGIN
@@ -41,7 +45,7 @@ Route::middleware(['auth'])->group(function () {
         return $role === 'director'
             ? redirect()->route('director.monitoring')
             : redirect()->route('ccr.index');
-    })->name('dashboard');
+    })->middleware('nocache')->name('dashboard');
 
     // ==================================================================
     // INBOX (semua role login boleh)
@@ -51,11 +55,15 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/inbox/read-all', [InboxController::class, 'readAll'])->name('inbox.readAll');
     Route::post('/inbox/clear-all', [InboxController::class, 'clearAll'])->name('inbox.clearAll');
 
+    // ✅ NEW: hapus notif yang SUDAH dibaca saja
+    Route::post('/inbox/clear-read', [InboxController::class, 'clearRead'])->name('inbox.clearRead');
+
     Route::get('/inbox/panel', [InboxController::class, 'panel'])->name('inbox.panel');
     Route::post('/inbox/{id}/read-json', [InboxController::class, 'readJson'])->name('inbox.readJson');
 
+    
     // ==============================================================
-    // ✅ PREVIEW + EDIT boleh untuk Operator/Admin/Direktur
+    // ✅ PREVIEW + EDIT boleh untuk Operator/Admin/Director
     // ==============================================================
     Route::middleware(['role:operator,admin,director'])->group(function () {
 
@@ -69,7 +77,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // ==============================================================
-    // SUBMIT (Operator/Admin -> Director) (biarin tetap operator/admin)
+    // SUBMIT (Operator/Admin -> Director)
     // ==============================================================
     Route::middleware(['role:operator,admin'])->group(function () {
         Route::post('/ccr/engine/{id}/submit', [CcrEngineController::class, 'submit'])->name('engine.submit');
@@ -77,23 +85,26 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // ==============================================================
-    // DIRECTOR APPROVE/REJECT (kalau director doang, bungkus role:director)
+    // DIRECTOR APPROVE/REJECT => NO CACHE
     // ==============================================================
-    Route::middleware(['role:director'])->group(function () {
+    Route::middleware(['role:director', 'nocache'])->group(function () {
         Route::post('/director/ccr/{type}/{id}/approve', [CcrApprovalController::class, 'approve'])->name('director.ccr.approve');
         Route::post('/director/ccr/{type}/{id}/reject', [CcrApprovalController::class, 'reject'])->name('director.ccr.reject');
     });
 
     // ==================================================================
-    // CCR: OPERATOR + ADMIN + DIRECTOR (✅ kamu mau director akses semua)
+    // CCR: OPERATOR + ADMIN + DIRECTOR
     // ==================================================================
     Route::middleware(['role:operator,admin,director'])->group(function () {
 
         // MENU UTAMA CCR
         Route::get('/ccr', [CcrReportController::class, 'index'])->name('ccr.index');
 
-        // MENU MANAGE CCR (ENGINE / SEAT)
+        // MENU MANAGE CCR
         Route::get('/ccr/manage', [CcrReportController::class, 'editMenu'])->name('ccr.manage.menu');
+
+        // ✅ ALIAS biar route('ccr.edit.menu') gak error (legacy name)
+        Route::get('/ccr/edit-menu', [CcrReportController::class, 'editMenu'])->name('ccr.edit.menu');
 
         // LIST CCR ENGINE & SEAT
         Route::get('/ccr/manage/engine', [CcrReportController::class, 'editEngineList'])->name('ccr.manage.engine');
@@ -129,21 +140,21 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/export/word/{id}', [ExportSeatController::class, 'generateSeatDownload'])->name('seat.export.word');
         });
 
-        // CCR TRASH (kalau director juga boleh lihat)
+        // CCR TRASH (boleh untuk director juga) - ini yang /ccr/trash
         Route::get('/ccr/trash', [CcrTrashController::class, 'index'])->name('ccr.trash.index');
         Route::post('/ccr/trash/restore', [CcrTrashController::class, 'restore'])->name('ccr.trash.restore');
     });
 
     // ==================================================================
-    // ADMIN + DIRECTOR (✅ supaya tombol User Management director tidak 403)
+    // ADMIN + DIRECTOR => NO CACHE (User management & trash admin)
     // ==================================================================
-    Route::middleware(['role:admin,director'])->group(function () {
+    Route::middleware(['role:admin,director', 'nocache'])->group(function () {
 
         // BULK TRASH DELETE
         Route::post('ccr/engine/trash-multiple', [EngineTrashController::class, 'trashMultiple'])->name('ccr.engine.trashMultiple');
         Route::post('ccr/seat/trash-multiple', [SeatTrashController::class, 'trashMultiple'])->name('ccr.seat.trashMultiple');
 
-        // TRASH MENU
+        // TRASH MENU (/trash)
         Route::prefix('trash')->name('trash.')->group(function () {
 
             Route::get('/', [TrashMenuController::class, 'index'])->name('menu');
@@ -171,13 +182,17 @@ Route::middleware(['auth'])->group(function () {
 
             Route::get('/{user}/edit', [UserManagementController::class, 'edit'])->name('edit');
             Route::put('/{user}', [UserManagementController::class, 'update'])->name('update');
+            
+            Route::delete('/{user}', [UserManagementController::class, 'destroy'])
+                ->name('destroy');
+
         });
     });
 
     // ==================================================================
-    // DIRECTOR ONLY: Monitoring
+    // DIRECTOR ONLY: Monitoring => NO CACHE
     // ==================================================================
-    Route::middleware(['role:director'])->prefix('director')->group(function () {
+    Route::middleware(['role:director', 'nocache'])->prefix('director')->group(function () {
 
         Route::get('/monitoring', [DirectorMonitoringController::class, 'index'])->name('director.monitoring');
 

@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
 use App\Support\Inbox;
+use App\Models\InboxMessage;
 
 class InboxController extends Controller
 {
     public function index()
     {
-        $items = Inbox::list(auth()->user(), 80);
+        $items  = Inbox::list(auth()->user(), 80);
         $unread = Inbox::unreadCount(auth()->user());
 
         return view('inbox.index', compact('items', 'unread'));
@@ -28,41 +30,62 @@ class InboxController extends Controller
 
     public function clearAll()
     {
-    \App\Support\Inbox::clearAll(auth()->user());
-    return back()->with('success', 'Notifikasi berhasil dikosongkan.');
+        Inbox::clearAll(auth()->user());
+        return back()->with('success', 'Notifikasi berhasil dikosongkan.');
     }
 
-    public function panel()
+    /**
+     * Dropdown panel (AJAX).
+     * WAJIB balikin JSON yang punya: unread + html (render blade).
+     */
+    public function panel(Request $request)
     {
-    $user = auth()->user();
+        $user = auth()->user();
 
-        $items = \App\Models\InboxMessage::query()
+        $items = InboxMessage::query()
             ->where('to_user_id', $user->id)
             ->orderByDesc('id')
             ->limit(8)
             ->get(['id','title','message','url','is_read','created_at']);
 
-        $unread = \App\Support\Inbox::unreadCount($user);
+        $unread = Inbox::unreadCount($user);
+
+        // ✅ ini kuncinya biar dropdown kepake
+        $html = view('inbox.panel', compact('items'))->render();
 
         return response()->json([
             'unread' => $unread,
+            'html'   => $html,
+
+            // optional: biar masih kompatibel kalau suatu saat mau render via JS
             'items'  => $items->map(function ($n) {
                 return [
-                    'id' => $n->id,
-                    'title' => $n->title,
-                    'message' => $n->message,
-                    'url' => $n->url,
-                    'is_read' => (bool) $n->is_read,
-                    'created_at' => $n->created_at->format('d M Y H:i'),
+                    'id'         => $n->id,
+                    'title'      => $n->title,
+                    'message'    => $n->message,
+                    'url'        => $n->url,
+                    'is_read'    => (bool) $n->is_read,
+                    'created_at' => optional($n->created_at)->format('d M Y H:i'),
                 ];
-            }),
+            })->values(),
         ]);
     }
 
     public function readJson($id)
     {
-        \App\Support\Inbox::markRead((int) $id, auth()->user());
+        Inbox::markRead((int) $id, auth()->user());
         return response()->json(['ok' => true]);
+    }
+
+    public function clearRead()
+    {
+        $userId = auth()->id();
+
+        InboxMessage::where('to_user_id', $userId)
+            ->where('is_read', 1)
+            ->delete();
+
+        return back()->with('success', 'Notifikasi yang sudah dibaca berhasil dihapus.');
     }
 
 }

@@ -8,7 +8,7 @@
 
         {{-- LOGO FIX PROPORSIONAL --}}
         <div class="logo-wrapper">
-            <img src="{{ asset('rnf-logo.png') }}" class="header-logo">
+            <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
         </div>
 
         <div>
@@ -20,7 +20,6 @@
 </div>
 
 <div class="accent-line"></div>
-
 
 {{-- ======================= MENU UTAMA (ENGINE, SEAT, EDIT) ======================= --}}
 <div class="menu-container">
