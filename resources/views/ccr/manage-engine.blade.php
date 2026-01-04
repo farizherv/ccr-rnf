@@ -170,12 +170,20 @@
                                 <span>SN: <b>{{ $r->sn ?? '-' }}</b></span>
                                 <span>Tanggal: <b>{{ $r->inspection_date ? date('Y-m-d', strtotime($r->inspection_date)) : '-' }}</b></span>
 
-                                <span class="time-pill">
-                                    <span class="time-text">
-                                        {{ $r->inspection_date ? \Carbon\Carbon::parse($r->inspection_date)->timezone('Asia/Makassar')->format('H:i') : '--:--' }}
+                                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+
+                                    <span class="time-pill">
+                                        <span class="time-text">
+                                            {{ $r->updated_at
+                                                ? $r->updated_at->timezone('Asia/Makassar')->format('H:i')
+                                                : '--:--'
+                                            }}
+                                        </span>
+                                        <span class="time-wita">(WITA)</span>
                                     </span>
-                                    <span class="time-wita">(WITA)</span>
-                                </span>
+
+                                </div>
+
                             </div>
                         </div>
                     </div>

@@ -12,8 +12,11 @@ class CcrPhoto extends Model
     ];
 
     // FOTO MILIK ITEM
+    protected $touches = ['item'];
+
     public function item()
     {
         return $this->belongsTo(CcrItem::class, 'ccr_item_id');
     }
+
 }

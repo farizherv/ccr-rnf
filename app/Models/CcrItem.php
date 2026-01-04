@@ -11,6 +11,8 @@ class CcrItem extends Model
         'description',
     ];
 
+    protected $touches = ['report'];
+
     public function report()
     {
         return $this->belongsTo(CcrReport::class, 'ccr_report_id');
@@ -20,4 +22,5 @@ class CcrItem extends Model
     {
         return $this->hasMany(CcrPhoto::class);
     }
+    
 }

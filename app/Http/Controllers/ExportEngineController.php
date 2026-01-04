@@ -2,28 +2,47 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use PhpOffice\PhpWord\TemplateProcessor;
 use App\Models\CcrReport;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-
+use PhpOffice\PhpWord\TemplateProcessor;
 
 class ExportEngineController extends Controller
 {
-    
-    private function safeFolder($text)
+    private function safeFolder($text): string
     {
-    $text = trim((string) $text);
-    $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
-    $text = preg_replace('/\s+/', ' ', $text);
-    return $text !== '' ? $text : 'UNKNOWN';
+        $text = trim((string) $text);
+        $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+        return $text !== '' ? $text : 'UNKNOWN';
     }
 
-    private function normalizeGroupFolder($group)
+    private function normalizeGroupFolder($group): string
     {
-    $group = $this->safeFolder($group);
-    if (strtolower($group) === 'operator seat') return 'Seat Operator';
-    return $group;
+        $group = $this->safeFolder($group);
+        if (strtolower($group) === 'operator seat') return 'Seat Operator';
+        return $group;
+    }
+
+    private function publicDiskAbsPath($maybePath): ?string
+    {
+        $raw = ltrim((string) $maybePath, '/');
+
+        // normalisasi prefix yang sering kejadian
+        $raw = preg_replace('#^(storage/|public/)#', '', $raw);
+        $raw = preg_replace('#^storage/public/#', '', $raw);
+
+        // kalau path relatif disk public
+        if ($raw !== '' && Storage::disk('public')->exists($raw)) {
+            return Storage::disk('public')->path($raw);
+        }
+
+        // kalau ternyata DB nyimpan absolute path
+        if (is_file($maybePath)) {
+            return $maybePath;
+        }
+
+        return null;
     }
 
     /**
@@ -31,44 +50,38 @@ class ExportEngineController extends Controller
      * 🔥 GENERATE WORD ENGINE
      * ==========================================
      */
-    public function generateEngine($id)
+    public function generateEngine($id): string
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        // LOAD TEMPLATE
         $template = new TemplateProcessor(
             public_path('templates/TEMPLATE CCR ENGINE.docx')
         );
 
         // HEADER
-        $template->setValue('COMPONENT', $report->component);
-        $template->setValue('MAKE', $report->make);
-        $template->setValue('MODEL', $report->model);
-        $template->setValue('SN', $report->sn);
-        $template->setValue('SMU', $report->smu);
-        $template->setValue('CUSTOMER', $report->customer);
+        $template->setValue('COMPONENT', (string) $report->component);
+        $template->setValue('MAKE', (string) $report->make);
+        $template->setValue('MODEL', (string) $report->model);
+        $template->setValue('SN', (string) $report->sn);
+        $template->setValue('SMU', (string) $report->smu);
+        $template->setValue('CUSTOMER', (string) $report->customer);
         $template->setValue(
             'INSPECTION_DATE',
             optional($report->inspection_date)->format('Y-m-d')
         );
 
-        /**
-         * FOTO FIT FINAL
-         */
+        // FOTO FIT
         $FIXED_WIDTH = 350;
         $MAX_HEIGHT  = 455;
-        $SPACING     = 25;
 
         $itemsData = [];
 
         foreach ($report->items as $item) {
-
             $photoRows = [];
 
-            foreach ($item->photos as $index => $photo) {
-
-                $path = Storage::disk('public')->path($photo->path);
-                if (!file_exists($path)) continue;
+            foreach ($item->photos as $photo) {
+                $path = $this->publicDiskAbsPath($photo->path);
+                if (!$path) continue;
 
                 try {
                     [$w, $h] = getimagesize($path);
@@ -76,13 +89,12 @@ class ExportEngineController extends Controller
                     continue;
                 }
 
+                if ($h == 0) continue;
                 $ratio = $w / $h;
 
-                // Width-fit default
                 $fitWidth  = $FIXED_WIDTH;
                 $fitHeight = $FIXED_WIDTH / $ratio;
 
-                // Height-fit jika terlalu tinggi
                 if ($fitHeight > $MAX_HEIGHT) {
                     $fitHeight = $MAX_HEIGHT;
                     $fitWidth  = $MAX_HEIGHT * $ratio;
@@ -90,20 +102,17 @@ class ExportEngineController extends Controller
 
                 $photoRows[] = [
                     'photo' => [
-                        'path'      => $path,
-                        'width'     => $fitWidth,
-                        'height'    => $fitHeight,
-                        'ratio'     => true,
-                        'alignment' => 'center'
+                        'path'   => $path,
+                        'width'  => $fitWidth,
+                        'height' => $fitHeight,
+                        'ratio'  => true,
                     ]
                 ];
             }
 
-            // Jika tidak ada foto
             if (empty($photoRows)) {
                 $photoRows[] = ['photo' => null];
             }
-
 
             $itemsData[] = [
                 'description' => $item->description ?: '-',
@@ -112,17 +121,13 @@ class ExportEngineController extends Controller
         }
 
         // CLONE ITEM TABLE
-        $template->cloneBlock('ITEM_TABLE', count($itemsData), true, true);
+        $template->cloneBlock('ITEM_TABLE', max(count($itemsData), 1), true, true);
 
-        // LOOP ITEM
         foreach ($itemsData as $i => $itemData) {
-
             $n = $i + 1;
 
-            // DESCRIPTION
             $template->setValue("description#{$n}", $itemData['description']);
 
-            // CLONE PHOTO BLOCK
             $template->cloneBlock(
                 "PHOTO_BLOCK#{$n}",
                 count($itemData['photos']),
@@ -137,10 +142,10 @@ class ExportEngineController extends Controller
 
                 if ($photo['photo'] === null) {
                     $template->setImageValue("photo#{$n}#{$m}", [
-                        'path' => $blank,
-                        'width' => 1,
+                        'path'   => $blank,
+                        'width'  => 1,
                         'height' => 1,
-                        'ratio' => true,
+                        'ratio'  => true,
                     ]);
                     $template->setValue("photo_text#{$n}#{$m}", "NO PHOTO");
                     continue;
@@ -154,7 +159,6 @@ class ExportEngineController extends Controller
                 ]);
                 $template->setValue("photo_text#{$n}#{$m}", "");
             }
-
         }
 
         // SAVE WORD FILE (rapi + update docx_path)
@@ -165,24 +169,23 @@ class ExportEngineController extends Controller
         $reportId    = $report->id;
 
         $fileName = "CCR_ENGINE.docx";
-
-        // relative path untuk disk public
         $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$model}/{$reportId}/Export/{$fileName}";
 
-        // pastikan foldernya ada
         Storage::disk('public')->makeDirectory(dirname($relativePath));
 
-        // absolute path untuk saveAs
-        $savePath = storage_path('app/public/' . $relativePath);
+        // kalau ada file lama, hapus dulu biar gak “ketuker”
+        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
+            Storage::disk('public')->delete($report->docx_path);
+        }
 
+        $savePath = storage_path('app/public/' . $relativePath);
         $template->saveAs($savePath);
 
-        // simpan path ke DB
         $report->docx_path = $relativePath;
+        $report->docx_generated_at = now();
         $report->save();
 
         return $savePath;
-
     }
 
     /**
@@ -193,37 +196,33 @@ class ExportEngineController extends Controller
     public function previewPdf($id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
-
-        // Kalau kamu memang mau preview halaman (bukan PDF), gunakan view preview
         return view('engine.preview', compact('report'));
-
-        // Kalau view kamu bukan engine.preview, ganti sesuai file view yang ada:
-        // return view('engine.show', compact('report'));
     }
 
     /**
      * ================================
-     * 🔥 DOWNLOAD WORD ENGINE
+     * 🔥 DOWNLOAD WORD ENGINE (AUTO-REGENERATE)
      * ================================
      */
     public function downloadEngine($id)
     {
         $report = CcrReport::findOrFail($id);
 
-        // kalau sudah pernah dibuat dan filenya masih ada, langsung download
-        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
-            $abs = storage_path('app/public/' . $report->docx_path);
-            return response()->download($abs, basename($abs));
+        $needRegenerate =
+            empty($report->docx_path) ||
+            !Storage::disk('public')->exists($report->docx_path) ||
+            empty($report->docx_generated_at) ||
+            ($report->updated_at && $report->docx_generated_at && $report->updated_at->gt($report->docx_generated_at));
+
+        if ($needRegenerate) {
+            $filePath = $this->generateEngine($id);
+            if (!is_file($filePath)) abort(404, 'File Word tidak ditemukan.');
+            $downloadName = "CCR_ENGINE_{$report->id}_" . now()->format('Ymd_His') . ".docx";
+            return response()->download($filePath, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         }
 
-        // kalau belum ada, baru generate
-        $filePath = $this->generateEngine($id);
-
-        if (!file_exists($filePath)) {
-            abort(404, 'File Word tidak ditemukan.');
-        }
-
-        return response()->download($filePath, basename($filePath));
+        $abs = storage_path('app/public/' . $report->docx_path);
+        $downloadName = "CCR_ENGINE_{$report->id}_" . now()->format('Ymd_His') . ".docx";
+        return response()->download($abs, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
-
 }

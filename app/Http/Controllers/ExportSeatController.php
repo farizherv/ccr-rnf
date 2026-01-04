@@ -2,46 +2,39 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use PhpOffice\PhpWord\TemplateProcessor;
 use App\Models\CcrReport;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-
+use PhpOffice\PhpWord\TemplateProcessor;
 
 class ExportSeatController extends Controller
 {
-
-    private function safeFolder($text)
+    private function safeFolder($text): string
     {
-    $text = trim((string) $text);
-    $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
-    $text = preg_replace('/\s+/', ' ', $text);
-    return $text !== '' ? $text : 'UNKNOWN';
+        $text = trim((string) $text);
+        $text = preg_replace('/[^\pL\pN\s\-_\.]/u', '', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+        return $text !== '' ? $text : 'UNKNOWN';
     }
 
-    private function normalizeGroupFolder($group)
+    private function normalizeGroupFolder($group): string
     {
-    $group = $this->safeFolder($group);
-    // samakan dengan folder NAS kamu
-    if (strtolower($group) === 'operator seat') return 'Seat Operator';
-    return $group;
+        $group = $this->safeFolder($group);
+        if (strtolower($group) === 'operator seat') return 'Seat Operator';
+        return $group;
     }
 
-    
-    private function publicDiskAbsPath($maybePath)
+    private function publicDiskAbsPath($maybePath): ?string
     {
         $raw = ltrim((string) $maybePath, '/');
 
-        // normalisasi prefix yang sering kejadian
         $raw = preg_replace('#^(storage/|public/)#', '', $raw);
         $raw = preg_replace('#^storage/public/#', '', $raw);
 
-        // kalau memang path relatif disk public
-        if (Storage::disk('public')->exists($raw)) {
+        if ($raw !== '' && Storage::disk('public')->exists($raw)) {
             return Storage::disk('public')->path($raw);
         }
 
-        // kalau ternyata DB nyimpan absolute path
         if (is_file($maybePath)) {
             return $maybePath;
         }
@@ -49,48 +42,41 @@ class ExportSeatController extends Controller
         return null;
     }
 
-
     /**
      * ==========================================
-     * 🔥 GENERATE WORD SEAT (SAMA ENGINE)
+     * 🔥 GENERATE WORD SEAT
      * ==========================================
      */
-    public function generateSeat($id)
+    public function generateSeat($id): string
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        // LOAD TEMPLATE
         $template = new TemplateProcessor(
             public_path('templates/TEMPLATE CCR SEAT.docx')
         );
 
         // HEADER
-        $template->setValue('COMPONENT', $report->component);
-        $template->setValue('MAKE', $report->make);
-        $template->setValue('UNIT', $report->unit);
-        $template->setValue('MODEL', $report->model);
-        $template->setValue('WO_PR', $report->wo_pr);
-        $template->setValue('CUSTOMER', $report->customer);
+        $template->setValue('COMPONENT', (string) $report->component);
+        $template->setValue('MAKE', (string) $report->make);
+        $template->setValue('UNIT', (string) $report->unit);
+        $template->setValue('MODEL', (string) $report->model);
+        $template->setValue('WO_PR', (string) $report->wo_pr);
+        $template->setValue('CUSTOMER', (string) $report->customer);
         $template->setValue(
             'INSPECTION_DATE',
             optional($report->inspection_date)->format('Y-m-d')
         );
 
-        /**
-         * FOTO FIT FINAL (SAMA ENGINE)
-         */
+        // FOTO FIT
         $FIXED_WIDTH = 350;
         $MAX_HEIGHT  = 455;
-        $SPACING     = 25;
 
         $itemsData = [];
 
         foreach ($report->items as $item) {
-
             $photoRows = [];
 
-            foreach ($item->photos as $index => $photo) {
-
+            foreach ($item->photos as $photo) {
                 $path = $this->publicDiskAbsPath($photo->path);
                 if (!$path) continue;
 
@@ -100,13 +86,12 @@ class ExportSeatController extends Controller
                     continue;
                 }
 
+                if ($h == 0) continue;
                 $ratio = $w / $h;
 
-                // Default width-fit
                 $fitWidth  = $FIXED_WIDTH;
                 $fitHeight = $FIXED_WIDTH / $ratio;
 
-                // Jika terlalu tinggi → height-fit
                 if ($fitHeight > $MAX_HEIGHT) {
                     $fitHeight = $MAX_HEIGHT;
                     $fitWidth  = $MAX_HEIGHT * $ratio;
@@ -117,36 +102,29 @@ class ExportSeatController extends Controller
                         'path'   => $path,
                         'width'  => $fitWidth,
                         'height' => $fitHeight,
-                        'ratio'  => true
+                        'ratio'  => true,
                     ]
                 ];
             }
 
-            // Jika tidak ada foto
             if (empty($photoRows)) {
                 $photoRows[] = ['photo' => null];
             }
 
-            
             $itemsData[] = [
                 'description' => $item->description ?: '-',
                 'photos'      => $photoRows
             ];
-        
-        }   
+        }
 
         // CLONE ITEM TABLE
-        $template->cloneBlock('ITEM_TABLE', count($itemsData), true, true);
+        $template->cloneBlock('ITEM_TABLE', max(count($itemsData), 1), true, true);
 
-        // LOOP ITEM
         foreach ($itemsData as $i => $itemData) {
-
             $n = $i + 1;
 
-            // DESCRIPTION
             $template->setValue("description#{$n}", $itemData['description']);
 
-            // CLONE PHOTO BLOCK
             $template->cloneBlock(
                 "PHOTO_BLOCK#{$n}",
                 count($itemData['photos']),
@@ -159,7 +137,6 @@ class ExportSeatController extends Controller
             foreach ($itemData['photos'] as $k => $photo) {
                 $m = $k + 1;
 
-                // ✅ kalau tidak ada foto
                 if ($photo['photo'] === null) {
                     $template->setImageValue("photo#{$n}#{$m}", [
                         'path'   => $blank,
@@ -171,7 +148,6 @@ class ExportSeatController extends Controller
                     continue;
                 }
 
-                // ✅ kalau ada foto
                 $template->setImageValue("photo#{$n}#{$m}", [
                     'path'   => $photo['photo']['path'],
                     'width'  => $photo['photo']['width'],
@@ -180,12 +156,9 @@ class ExportSeatController extends Controller
                 ]);
                 $template->setValue("photo_text#{$n}#{$m}", "");
             }
-
-
         }
 
-        // SAVE FILE
-        // SAVE WORD FILE (rapi + update docx_path)
+        // SAVE WORD FILE
         $groupFolder = $this->normalizeGroupFolder($report->group_folder);
         $customer    = $this->safeFolder($report->customer);
         $component   = $this->safeFolder($report->component);
@@ -193,24 +166,22 @@ class ExportSeatController extends Controller
         $reportId    = $report->id;
 
         $fileName = "CCR_SEAT.docx";
-
-        // relative path untuk disk public
         $relativePath = "ccr_files/{$groupFolder}/{$customer}/{$component}/{$unit}/{$reportId}/Export/{$fileName}";
 
-        // pastikan foldernya ada
         Storage::disk('public')->makeDirectory(dirname($relativePath));
 
-        // absolute path untuk saveAs
-        $savePath = storage_path('app/public/' . $relativePath);
+        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
+            Storage::disk('public')->delete($report->docx_path);
+        }
 
+        $savePath = storage_path('app/public/' . $relativePath);
         $template->saveAs($savePath);
 
-        // simpan path ke DB
         $report->docx_path = $relativePath;
+        $report->docx_generated_at = now();
         $report->save();
 
         return $savePath;
-
     }
 
     /**
@@ -226,28 +197,28 @@ class ExportSeatController extends Controller
 
     /**
      * ================================
-     * 🔥 DOWNLOAD WORD SEAT
+     * 🔥 DOWNLOAD WORD SEAT (AUTO-REGENERATE)
      * ================================
      */
     public function generateSeatDownload($id)
     {
         $report = CcrReport::findOrFail($id);
 
-        // kalau sudah pernah dibuat dan filenya masih ada, langsung download
-        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
-            $abs = storage_path('app/public/' . $report->docx_path);
-            return response()->download($abs, basename($abs));
+        $needRegenerate =
+            empty($report->docx_path) ||
+            !Storage::disk('public')->exists($report->docx_path) ||
+            empty($report->docx_generated_at) ||
+            ($report->updated_at && $report->docx_generated_at && $report->updated_at->gt($report->docx_generated_at));
+
+        if ($needRegenerate) {
+            $filePath = $this->generateSeat($id);
+            if (!is_file($filePath)) abort(404, 'File Word tidak ditemukan.');
+            $downloadName = "CCR_SEAT_{$report->id}_" . now()->format('Ymd_His') . ".docx";
+            return response()->download($filePath, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         }
 
-        // kalau belum ada, baru generate
-        $filePath = $this->generateSeat($id);
-
-        if (!file_exists($filePath)) {
-            abort(404, 'File Word tidak ditemukan.');
-        }
-
-        return response()->download($filePath, basename($filePath));
+        $abs = storage_path('app/public/' . $report->docx_path);
+        $downloadName = "CCR_SEAT_{$report->id}_" . now()->format('Ymd_His') . ".docx";
+        return response()->download($abs, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
-
 }
-

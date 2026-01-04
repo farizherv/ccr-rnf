@@ -161,15 +161,16 @@ class CcrSeatController extends Controller
             'new_items.*.photos.*'     => 'nullable|image|max:8000',
         ]);
 
-        // Ambil report
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        // Tanggal + WITA
+        $changed = false;
+
+        // Tanggal + Jam WITA saat edit
         $finalDate = Carbon::parse($data['inspection_date'])
             ->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
 
-        // Update header
-        $report->update([
+        // ===== Update header hanya kalau berubah =====
+        $report->fill([
             'group_folder'    => $data['group_folder'],
             'component'       => $data['component'],
             'make'            => $request->make,
@@ -180,35 +181,42 @@ class CcrSeatController extends Controller
             'inspection_date' => $finalDate,
         ]);
 
-        $report->refresh();
+        if ($report->isDirty()) {
+            $report->save();
+            $changed = true;
+        }
 
-        // Folder Synology
+        // Folder Synology (pakai inspection_date final)
         $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
         $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
         $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
         Storage::disk('public')->makeDirectory("$folder/photos");
 
-
-        // ===========================================================
-        // UPDATE ITEM LAMA
-        // ===========================================================
+        // ===== UPDATE ITEM LAMA =====
         if (!empty($data['items'])) {
             foreach ($data['items'] as $itemId => $input) {
 
-                $item = CcrItem::find($itemId);
+                $item = CcrItem::with('photos')->find($itemId);
                 if (!$item) continue;
 
-                $item->update([
+                // Update description kalau berubah
+                $item->fill([
                     'description' => $input['description'] ?? '',
                 ]);
 
-                // Hapus foto lama
+                if ($item->isDirty()) {
+                    $item->save();
+                    $changed = true;
+                }
+
+                // Hapus foto lama (ini yang sering tidak touch report)
                 if (!empty($input['delete_photos'])) {
                     foreach ($input['delete_photos'] as $photoId) {
                         $photo = CcrPhoto::find($photoId);
                         if ($photo) {
                             Storage::disk('public')->delete($photo->path);
                             $photo->delete();
+                            $changed = true;
                         }
                     }
                 }
@@ -221,14 +229,13 @@ class CcrSeatController extends Controller
                             'ccr_item_id' => $itemId,
                             'path'        => $path,
                         ]);
+                        $changed = true;
                     }
                 }
             }
         }
 
-        // ===========================================================
-        // CREATE ITEM BARU
-        // ===========================================================
+        // ===== CREATE ITEM BARU =====
         if (!empty($data['new_items'])) {
             foreach ($data['new_items'] as $index => $input) {
 
@@ -241,6 +248,7 @@ class CcrSeatController extends Controller
                     'ccr_report_id' => $report->id,
                     'description'   => $hasDesc ?? '',
                 ]);
+                $changed = true;
 
                 if ($hasPhoto) {
                     foreach ($request->file("new_items.$index.photos") as $photo) {
@@ -249,21 +257,32 @@ class CcrSeatController extends Controller
                             'ccr_item_id' => $item->id,
                             'path'        => $path,
                         ]);
+                        $changed = true;
                     }
                 }
             }
+        }
+
+        // ===== FINAL: kalau ada perubahan apapun, paksa jam report + invalidate docx =====
+        if ($changed) {
+            CcrReport::whereKey($report->id)->update([
+                'docx_generated_at' => null,
+                'updated_at'        => now(),
+            ]);
         }
 
         return redirect()->route('ccr.manage.seat')
             ->with('success', 'Perubahan CCR Operator Seat berhasil disimpan!');
     }
 
+
     // ===========================================================
     // DELETE ITEM
     // ===========================================================
     public function deleteItem(CcrItem $item)
     {
-        $rid = $item->ccr_report_id;
+        $item->loadMissing(['photos']);
+        $reportId = $item->ccr_report_id;
 
         foreach ($item->photos as $p) {
             Storage::disk('public')->delete($p->path);
@@ -272,9 +291,35 @@ class CcrSeatController extends Controller
 
         $item->delete();
 
-        return redirect()->route('seat.edit', $rid)
+        // paksa report dianggap berubah + invalidate docx
+        CcrReport::whereKey($reportId)->update([
+            'docx_generated_at' => null,
+            'updated_at'        => now(),
+        ]);
+
+        return redirect()->route('seat.edit', $reportId)
             ->with('success', 'Item berhasil dihapus.');
     }
+
+    // ===========================================================
+    // DELETE PHOTO
+    // ===========================================================
+    public function deletePhoto(CcrPhoto $photo)
+    {
+    $photo->loadMissing('item');
+    $reportId = $photo->item->ccr_report_id;
+
+    Storage::disk('public')->delete($photo->path);
+    $photo->delete();
+
+    CcrReport::whereKey($reportId)->update([
+        'docx_generated_at' => null,
+        'updated_at'        => now(),
+    ]);
+
+    return redirect()->route('seat.edit', $reportId)
+        ->with('success', 'Foto berhasil dihapus.');
+    }   
 
     // ===========================================================
     // DELETE MULTIPLE

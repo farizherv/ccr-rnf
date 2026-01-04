@@ -165,14 +165,14 @@ class CcrEngineController extends Controller
 
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        // ============================================
-        // Gabungkan TANGGAL + JAM WITA OTOMATIS SAAT EDIT
-        // ============================================
+        $changed = false;
+
+        // Gabungkan tanggal + jam WITA saat edit
         $finalDate = Carbon::parse($data['inspection_date'])
             ->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
 
-        // Update header
-        $report->update([
+        // ====== Update header report (hanya save kalau memang berubah) ======
+        $report->fill([
             'group_folder'    => $data['group_folder'],
             'component'       => $data['component'],
             'make'            => $request->make,
@@ -183,34 +183,42 @@ class CcrEngineController extends Controller
             'inspection_date' => $finalDate,
         ]);
 
-        // ⭐ jam & tanggal update
-        $report->refresh();
+        if ($report->isDirty()) {
+            $report->save();
+            $changed = true;
+        }
 
-        // generate folder
+        // generate folder pakai inspection_date final
         $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
         $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
         $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
         Storage::disk('public')->makeDirectory("$folder/photos");
 
-
         // ===== UPDATE OLD ITEMS =====
         if (!empty($data['items'])) {
             foreach ($data['items'] as $itemId => $input) {
 
-                $item = CcrItem::find($itemId);
+                $item = CcrItem::with('photos')->find($itemId);
                 if (!$item) continue;
 
-                $item->update([
+                // update desc (save kalau berubah)
+                $item->fill([
                     'description' => $input['description'] ?? '',
                 ]);
 
-                // delete old photo
+                if ($item->isDirty()) {
+                    $item->save();
+                    $changed = true; // ini akan ikut touch report via $touches (bagus)
+                }
+
+                // delete old photo (INI yang sering tidak touch report)
                 if (!empty($input['delete_photos'])) {
                     foreach ($input['delete_photos'] as $photoId) {
                         $photo = CcrPhoto::find($photoId);
                         if ($photo) {
                             Storage::disk('public')->delete($photo->path);
                             $photo->delete();
+                            $changed = true;
                         }
                     }
                 }
@@ -223,6 +231,7 @@ class CcrEngineController extends Controller
                             'ccr_item_id' => $itemId,
                             'path'        => $path,
                         ]);
+                        $changed = true; // photo create biasanya touch, tapi kita tetap anggap perubahan
                     }
                 }
             }
@@ -232,7 +241,7 @@ class CcrEngineController extends Controller
         if (!empty($data['new_items'])) {
             foreach ($data['new_items'] as $index => $input) {
 
-                $hasDesc = $input['description'] ?? null;
+                $hasDesc  = $input['description'] ?? null;
                 $hasPhoto = $request->hasFile("new_items.$index.photos");
 
                 if (!$hasDesc && !$hasPhoto) continue;
@@ -241,6 +250,7 @@ class CcrEngineController extends Controller
                     'ccr_report_id' => $report->id,
                     'description'   => $hasDesc ?? '',
                 ]);
+                $changed = true;
 
                 if ($hasPhoto) {
                     foreach ($request->file("new_items.$index.photos") as $photo) {
@@ -249,21 +259,33 @@ class CcrEngineController extends Controller
                             'ccr_item_id' => $item->id,
                             'path'        => $path,
                         ]);
+                        $changed = true;
                     }
                 }
             }
+        }
+
+        // ===== FINAL: kalau ada perubahan item/foto/header, paksa update jam report + invalidate docx =====
+        if ($changed) {
+            CcrReport::whereKey($report->id)->update([
+                'docx_generated_at' => null,
+                'updated_at'        => now(),
+            ]);
         }
 
         return redirect()->route('ccr.manage.engine')
             ->with('success', 'Perubahan CCR Engine berhasil disimpan!');
     }
 
+
     // ===========================================================
     // DELETE ITEM
     // ===========================================================
     public function deleteItem(CcrItem $item)
     {
-        $rid = $item->ccr_report_id;
+        $item->loadMissing(['report', 'photos']);
+
+        $reportId = $item->ccr_report_id;
 
         foreach ($item->photos as $p) {
             Storage::disk('public')->delete($p->path);
@@ -272,7 +294,13 @@ class CcrEngineController extends Controller
 
         $item->delete();
 
-        return redirect()->route('engine.edit', $rid)
+        // paksa report dianggap berubah + invalidate docx
+        CcrReport::whereKey($reportId)->update([
+            'docx_generated_at' => null,
+            'updated_at'        => now(),
+        ]);
+
+        return redirect()->route('engine.edit', $reportId)
             ->with('success', 'Item berhasil dihapus.');
     }
 
@@ -281,12 +309,20 @@ class CcrEngineController extends Controller
     // ===========================================================
     public function deletePhoto(CcrPhoto $photo)
     {
-        $rid = $photo->item->ccr_report_id;
+        $photo->loadMissing('item');
+
+        $reportId = $photo->item->ccr_report_id;
 
         Storage::disk('public')->delete($photo->path);
         $photo->delete();
 
-        return redirect()->route('engine.edit', $rid)
+        // paksa report dianggap berubah + invalidate docx
+        CcrReport::whereKey($reportId)->update([
+            'docx_generated_at' => null,
+            'updated_at'        => now(),
+        ]);
+
+        return redirect()->route('engine.edit', $reportId)
             ->with('success', 'Foto berhasil dihapus.');
     }
 
@@ -305,7 +341,6 @@ class CcrEngineController extends Controller
 
         return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
     }
-
 
     //PREVIEW LIHAT
     public function previewEngine($id)
@@ -363,6 +398,5 @@ class CcrEngineController extends Controller
             : 'CCR Engine berhasil dikirim ke Direktur.'
         );
     }
-
-    
+ 
 }

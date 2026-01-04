@@ -137,6 +137,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/item/{item}/update', [CcrSeatController::class, 'updateItem'])->name('seat.item.update');
             Route::delete('/item/{item}/delete', [CcrSeatController::class, 'deleteItem'])->name('seat.item.delete');
 
+            Route::delete('/photo/{photo}/delete', [CcrSeatController::class, 'deletePhoto'])->name('seat.photo.delete');
+
             Route::get('/export/word/{id}', [ExportSeatController::class, 'generateSeatDownload'])->name('seat.export.word');
         });
 
