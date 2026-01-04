@@ -204,21 +204,26 @@ class ExportSeatController extends Controller
     {
         $report = CcrReport::findOrFail($id);
 
-        $needRegenerate =
-            empty($report->docx_path) ||
-            !Storage::disk('public')->exists($report->docx_path) ||
-            empty($report->docx_generated_at) ||
-            ($report->updated_at && $report->docx_generated_at && $report->updated_at->gt($report->docx_generated_at));
-
-        if ($needRegenerate) {
-            $filePath = $this->generateSeat($id);
-            if (!is_file($filePath)) abort(404, 'File Word tidak ditemukan.');
-            $downloadName = "CCR_SEAT_{$report->id}_" . now()->format('Ymd_His') . ".docx";
-            return response()->download($filePath, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        if ($report->docx_path && Storage::disk('public')->exists($report->docx_path)) {
+            $abs = Storage::disk('public')->path($report->docx_path);
+        } else {
+            $abs = $this->generateSeat($id);
         }
 
-        $abs = storage_path('app/public/' . $report->docx_path);
-        $downloadName = "CCR_SEAT_{$report->id}_" . now()->format('Ymd_His') . ".docx";
-        return response()->download($abs, $downloadName)->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        if (!is_file($abs)) {
+            abort(404, 'File Word tidak ditemukan.');
+        }
+
+        return response()->download(
+            $abs,
+            basename($abs),
+            [
+                'Content-Type'  => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma'        => 'no-cache',
+                'Expires'       => '0',
+            ]
+        );
     }
+
 }
