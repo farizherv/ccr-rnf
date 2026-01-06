@@ -129,7 +129,7 @@
 
             <!-- Footer card -->
             <div class="w-full sm:max-w-md rnf-footer-card">
-                Copyright © {{ date('Y') }} PT. Rezeki Nadh Fathan
+                Copyright © {{ date('Y') }} PT Rezeki Nadh Fathan. All Rights Reserved
             </div>
         </div>
     </div>
