@@ -21,6 +21,8 @@ use App\Http\Controllers\CcrApprovalController;
 use App\Http\Controllers\DirectorMonitoringController;
 
 use App\Http\Controllers\InboxController;
+use App\Http\Controllers\ExportPartsLabourController;
+
 
 // ==================================================================
 // DEFAULT REDIRECT
@@ -201,4 +203,19 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/monitoring/{id}/approve', [DirectorMonitoringController::class, 'approve'])->name('director.monitoring.approve');
         Route::post('/monitoring/{id}/reject', [DirectorMonitoringController::class, 'reject'])->name('director.monitoring.reject');
     });
+
+
+    // ==================================================================
+    // Parts & Labour Worksheet + Detail
+    // ==================================================================
+    Route::get('/engine/{id}/export-parts-labour', [ExportPartsLabourController::class, 'engine'])
+    ->name('engine.export.parts_labour');
+
+
+
+    // ==================================================================
+    // worksheet template
+    // ==================================================================
+    Route::post('/engine/{report}/worksheet/template', [CcrEngineController::class, 'applyWorksheetTemplate'])
+    ->name('engine.worksheet.template');
 });

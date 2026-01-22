@@ -12,8 +12,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\CcrSubmittedNotification;
 use Illuminate\Support\Facades\Auth;
-use App\Support\Inbox; 
-
+use App\Support\Inbox;
+use Illuminate\Support\Facades\Validator;
 
 class CcrSeatController extends Controller
 {
@@ -45,10 +45,13 @@ class CcrSeatController extends Controller
 
     // ===========================================================
     // STORE (HEADER + ITEM BARU)
+    // RULE BARU:
+    // - items minimal 1
+    // - tiap item harus punya: deskripsi ATAU foto
     // ===========================================================
     public function store(Request $request)
     {
-        $data = $request->validate([
+        $validator = Validator::make($request->all(), [
             'group_folder'         => 'required|string',
             'component'            => 'required|string',
             'make'                 => 'nullable|string',
@@ -58,10 +61,28 @@ class CcrSeatController extends Controller
             'customer'             => 'nullable|string',
             'inspection_date'      => 'required|date',
 
-            'items'                => 'required|array',
+            // ✅ minimal 1 item
+            'items'                => 'required|array|min:1',
             'items.*.description'  => 'nullable|string',
+            'items.*.photos'       => 'nullable|array',
             'items.*.photos.*'     => 'nullable|image|max:8000',
+        ], [
+            'items.min' => 'Minimal 1 item kerusakan harus diisi.',
         ]);
+
+        // ✅ tiap item wajib punya deskripsi ATAU foto
+        $validator->after(function ($v) use ($request) {
+            foreach ((array) $request->input('items', []) as $index => $row) {
+                $desc = trim((string) ($row['description'] ?? ''));
+                $hasPhoto = $request->hasFile("items.$index.photos");
+
+                if ($desc === '' && !$hasPhoto) {
+                    $v->errors()->add("items.$index.description", 'Isi deskripsi atau upload minimal 1 foto pada item ini.');
+                }
+            }
+        });
+
+        $data = $validator->validate();
 
         // Tanggal + Jam WITA otomatis
         $finalDate = Carbon::parse($data['inspection_date'])
@@ -138,10 +159,16 @@ class CcrSeatController extends Controller
 
     // ===========================================================
     // UPDATE HEADER + ITEM LAMA + ITEM BARU
+    // RULE BARU:
+    // - item LAMA: tetap valid kalau masih ada foto lama tersisa
+    // - kalau deskripsi kosong + semua foto lama dihapus + tidak upload foto baru => ERROR
     // ===========================================================
     public function updateHeader(Request $request, $id)
     {
-        $data = $request->validate([
+        // Load report dulu supaya bisa hitung foto lama tersisa
+        $report = CcrReport::with('items.photos')->findOrFail($id);
+
+        $validator = Validator::make($request->all(), [
             'group_folder'    => 'required|string',
             'component'       => 'required|string',
             'make'            => 'nullable|string',
@@ -151,17 +178,52 @@ class CcrSeatController extends Controller
             'customer'        => 'nullable|string',
             'inspection_date' => 'required|date',
 
-            'items'                    => 'nullable|array',
-            'items.*.description'      => 'nullable|string',
-            'items.*.photos.*'         => 'nullable|image|max:8000',
-            'items.*.delete_photos'    => 'nullable|array',
+            'items'                   => 'nullable|array',
+            'items.*.description'     => 'nullable|string',
+            'items.*.photos'          => 'nullable|array',
+            'items.*.photos.*'        => 'nullable|image|max:8000',
+            'items.*.delete_photos'   => 'nullable|array',
 
-            'new_items'                => 'nullable|array',
-            'new_items.*.description'  => 'nullable|string',
-            'new_items.*.photos.*'     => 'nullable|image|max:8000',
+            'new_items'               => 'nullable|array',
+            'new_items.*.description' => 'nullable|string',
+            'new_items.*.photos'      => 'nullable|array',
+            'new_items.*.photos.*'    => 'nullable|image|max:8000',
         ]);
 
-        $report = CcrReport::with('items.photos')->findOrFail($id);
+        // ✅ validasi “desc atau foto” untuk ITEM LAMA (hitung sisa foto lama)
+        $validator->after(function ($v) use ($request, $report) {
+
+            foreach ((array) $request->input('items', []) as $itemId => $row) {
+
+                $desc = trim((string) ($row['description'] ?? ''));
+                $hasNewUpload = $request->hasFile("items.$itemId.photos");
+
+                // cari item lama di report
+                $itemModel = $report->items->firstWhere('id', (int) $itemId);
+                if (!$itemModel) continue;
+
+                // foto lama yang ada di DB
+                $existingIds = $itemModel->photos->pluck('id')->map(fn($x) => (int) $x)->all();
+
+                // foto yang diminta dihapus dari form
+                $toDelete = collect($row['delete_photos'] ?? [])->map(fn($x) => (int) $x)->all();
+
+                // hitung foto lama yang tersisa setelah delete
+                $deletedCount = count(array_intersect($existingIds, $toDelete));
+                $remainingOldPhotos = max(0, count($existingIds) - $deletedCount);
+
+                // ✅ FAIL kalau:
+                // desc kosong + foto lama sisa 0 + tidak upload foto baru
+                if ($desc === '' && $remainingOldPhotos === 0 && !$hasNewUpload) {
+                    $v->errors()->add("items.$itemId.description", 'Item ini wajib punya deskripsi atau minimal 1 foto.');
+                }
+            }
+
+            // NOTE:
+            // new_items kamu tetap pakai logic "if blank -> continue" (tidak dianggap error).
+        });
+
+        $data = $validator->validate();
 
         $changed = false;
 
@@ -209,7 +271,7 @@ class CcrSeatController extends Controller
                     $changed = true;
                 }
 
-                // Hapus foto lama (ini yang sering tidak touch report)
+                // Hapus foto lama
                 if (!empty($input['delete_photos'])) {
                     foreach ($input['delete_photos'] as $photoId) {
                         $photo = CcrPhoto::find($photoId);
@@ -239,10 +301,11 @@ class CcrSeatController extends Controller
         if (!empty($data['new_items'])) {
             foreach ($data['new_items'] as $index => $input) {
 
-                $hasDesc  = $input['description'] ?? null;
+                $hasDesc  = trim((string)($input['description'] ?? ''));
                 $hasPhoto = $request->hasFile("new_items.$index.photos");
 
-                if (!$hasDesc && !$hasPhoto) continue;
+                // blank new item => skip
+                if ($hasDesc === '' && !$hasPhoto) continue;
 
                 $item = CcrItem::create([
                     'ccr_report_id' => $report->id,
@@ -275,7 +338,6 @@ class CcrSeatController extends Controller
             ->with('success', 'Perubahan CCR Operator Seat berhasil disimpan!');
     }
 
-
     // ===========================================================
     // DELETE ITEM
     // ===========================================================
@@ -306,20 +368,20 @@ class CcrSeatController extends Controller
     // ===========================================================
     public function deletePhoto(CcrPhoto $photo)
     {
-    $photo->loadMissing('item');
-    $reportId = $photo->item->ccr_report_id;
+        $photo->loadMissing('item');
+        $reportId = $photo->item->ccr_report_id;
 
-    Storage::disk('public')->delete($photo->path);
-    $photo->delete();
+        Storage::disk('public')->delete($photo->path);
+        $photo->delete();
 
-    CcrReport::whereKey($reportId)->update([
-        'docx_generated_at' => null,
-        'updated_at'        => now(),
-    ]);
+        CcrReport::whereKey($reportId)->update([
+            'docx_generated_at' => null,
+            'updated_at'        => now(),
+        ]);
 
-    return redirect()->route('seat.edit', $reportId)
-        ->with('success', 'Foto berhasil dihapus.');
-    }   
+        return redirect()->route('seat.edit', $reportId)
+            ->with('success', 'Foto berhasil dihapus.');
+    }
 
     // ===========================================================
     // DELETE MULTIPLE
@@ -337,20 +399,23 @@ class CcrSeatController extends Controller
         return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
     }
 
-    //preview seat
+    // ===========================================================
+    // PREVIEW SEAT
+    // ===========================================================
     public function preview($id)
     {
-    $report = \App\Models\CcrReport::with('items.photos')->findOrFail($id);
-    return view('seat.preview', compact('report'));
+        $report = CcrReport::with('items.photos')->findOrFail($id);
+        return view('seat.preview', compact('report'));
     }
 
-
+    // ===========================================================
     // SUBMIT TO DIREKTUR (Submit / Re-submit)
+    // ===========================================================
     public function submit(Request $request, int $id)
     {
         $report = CcrReport::findOrFail($id);
 
-        $resubmit = $request->boolean('resubmit'); // dari hidden input resubmit=1
+        $resubmit = $request->boolean('resubmit');
 
         // ✅ blok kalau masih antri / sedang direview
         if (in_array($report->approval_status, ['waiting', 'in_review'])) {
@@ -367,7 +432,6 @@ class CcrSeatController extends Controller
         $report->submitted_by    = auth()->id();
         $report->submitted_at    = now();
 
-        // optional: bersihkan note lama biar tidak membingungkan saat resubmit
         if ($resubmit) {
             $report->director_note = null;
         }
@@ -376,9 +440,7 @@ class CcrSeatController extends Controller
 
         // ✅ nama component untuk title notif (hindari CCR #id)
         $componentName = trim((string) ($report->component ?? ''));
-        if ($componentName === '') {
-            $componentName = 'Seat'; // fallback kalau field component kosong
-        }
+        if ($componentName === '') $componentName = 'Seat';
 
         // ✅ kirim notif ke Director setelah submit
         $openUrl = route('director.monitoring', ['open' => $report->id], false) . '#r-' . $report->id;
@@ -386,15 +448,13 @@ class CcrSeatController extends Controller
         Inbox::toRoles(['director'], [
             'type'    => 'seat_submitted',
             'title'   => $componentName,
-            'message' => 'Disubmit oleh ' . auth()->user()->name . '.',
+            'message' => 'Disubmit oleh ' . (auth()->user()->name ?? 'User') . '.',
             'url'     => $openUrl,
         ], auth()->id());
-
 
         return back()->with('success', $resubmit
             ? 'CCR Seat berhasil di Re-submit ke Direktur.'
             : 'CCR Seat berhasil dikirim ke Direktur.'
         );
     }
-
 }

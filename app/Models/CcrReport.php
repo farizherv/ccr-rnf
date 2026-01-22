@@ -14,6 +14,8 @@ class CcrReport extends Model
 
     protected $fillable = [
         'type',
+        'template_key',
+        'template_version',
         'group_folder',
         'component',
         'make',
@@ -27,6 +29,8 @@ class CcrReport extends Model
         'docx_path',
         'docx_generated_at',
         'purge_at',
+        'parts_payload',
+        'detail_payload',
     ];
 
     protected $casts = [
@@ -34,7 +38,11 @@ class CcrReport extends Model
         'docx_generated_at' => 'datetime',
         'purge_at'          => 'datetime',
         'deleted_at'        => 'datetime',
+        'template_version' => 'integer',
+        'parts_payload' => 'array',
+        'detail_payload' => 'array',
     ];
+
 
     public function items()
     {

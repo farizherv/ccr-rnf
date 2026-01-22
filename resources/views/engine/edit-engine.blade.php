@@ -252,6 +252,9 @@
                                :name="'new_items['+key+'][photos][]'"
                                @change="handleFileSelect($event)">
                     </div>
+                        <small style="font-size:11px; color:#777;">
+                            Maksimal 10 foto per item, ukuran maks 5 MB per foto.
+                        </small>
                 </div>
 
             </div>

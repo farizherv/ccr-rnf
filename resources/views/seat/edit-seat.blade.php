@@ -251,6 +251,9 @@
                                :name="'new_items['+key+'][photos][]'"
                                @change="handleFileSelect($event)">
                     </div>
+                        <small style="font-size:11px; color:#777;">
+                            Maksimal 10 foto per item, ukuran maks 5 MB per foto.
+                        </small>
                 </div>
 
             </div>
@@ -404,7 +407,7 @@ function manageSeat() {
 
     .accent-line {
         height: 4px;
-        background: #0D6EFD;
+        background: #E40505;
         border-radius: 20px;
         margin-bottom: 20px;
     }
@@ -522,3 +525,4 @@ function manageSeat() {
 </style>
 
 @endsection
+
