@@ -5,7 +5,7 @@ return [
         'template_key' => 'engine_4d34t_s64029_cantereuro2',
         'template_version' => 'v1',
         'source_excel' => 'Parts Labour Engine 4D34T-S64029 Canter Euro 2.xlsx',
-        'rows_count' => 96
+        'rows_count' => 96,
     ],
     'rows' => [
         [
@@ -16,23 +16,25 @@ return [
             'part_section' => '',
             'purchase_price' => '390000',
             'total' => '390000',
+            'sales_price_raw' => '533925',
             'sales_price' => '533925',
             'extended_price' => '533925',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'set',
             'part_number' => 'ME996566',
-            'part_description' => 'ring piston',
+            'part_description' => 'ring piston ',
             'part_section' => '',
             'purchase_price' => '1125000',
             'total' => '1125000',
+            'sales_price_raw' => '1483125',
             'sales_price' => '1483125',
             'extended_price' => '1483125',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -42,10 +44,11 @@ return [
             'part_section' => '',
             'purchase_price' => '325000',
             'total' => '325000',
+            'sales_price_raw' => '658507.5',
             'sales_price' => '658508',
             'extended_price' => '658508',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -55,10 +58,11 @@ return [
             'part_section' => '',
             'purchase_price' => '420000',
             'total' => '420000',
+            'sales_price_raw' => '676305',
             'sales_price' => '676305',
             'extended_price' => '676305',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -68,10 +72,11 @@ return [
             'part_section' => '',
             'purchase_price' => '350000',
             'total' => '350000',
+            'sales_price_raw' => '587317.5',
             'sales_price' => '587318',
             'extended_price' => '587318',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -81,10 +86,11 @@ return [
             'part_section' => '',
             'purchase_price' => '145000',
             'total' => '145000',
+            'sales_price_raw' => '311456.25',
             'sales_price' => '311456',
             'extended_price' => '311456',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -94,10 +100,11 @@ return [
             'part_section' => '',
             'purchase_price' => '450000',
             'total' => '450000',
+            'sales_price_raw' => '1005558.75',
             'sales_price' => '1005559',
             'extended_price' => '1005559',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -107,10 +114,11 @@ return [
             'part_section' => '',
             'purchase_price' => '1390000',
             'total' => '1390000',
+            'sales_price_raw' => '2491650',
             'sales_price' => '2491650',
             'extended_price' => '2491650',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
@@ -120,10 +128,11 @@ return [
             'part_section' => '',
             'purchase_price' => '245000',
             'total' => '735000',
+            'sales_price_raw' => '400443.75',
             'sales_price' => '400444',
-            'extended_price' => '1201332',
+            'extended_price' => '1201331',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -133,10 +142,11 @@ return [
             'part_section' => '',
             'purchase_price' => '2150000',
             'total' => '2150000',
+            'sales_price_raw' => '5220600',
             'sales_price' => '5220600',
             'extended_price' => '5220600',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -146,10 +156,11 @@ return [
             'part_section' => '',
             'purchase_price' => '4100000',
             'total' => '4100000',
+            'sales_price_raw' => '6407100',
             'sales_price' => '6407100',
             'extended_price' => '6407100',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -159,10 +170,11 @@ return [
             'part_section' => '',
             'purchase_price' => '170000',
             'total' => '680000',
+            'sales_price_raw' => '288150',
             'sales_price' => '288150',
             'extended_price' => '1152600',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '8',
@@ -172,10 +184,11 @@ return [
             'part_section' => '',
             'purchase_price' => '60000',
             'total' => '480000',
+            'sales_price_raw' => '87000',
             'sales_price' => '87000',
             'extended_price' => '696000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -185,10 +198,11 @@ return [
             'part_section' => '',
             'purchase_price' => '2200000',
             'total' => '2200000',
+            'sales_price_raw' => '8008875',
             'sales_price' => '8008875',
             'extended_price' => '8008875',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -198,10 +212,11 @@ return [
             'part_section' => '',
             'purchase_price' => '105000',
             'total' => '105000',
+            'sales_price_raw' => '177975',
             'sales_price' => '177975',
             'extended_price' => '177975',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -211,10 +226,11 @@ return [
             'part_section' => '',
             'purchase_price' => '70000',
             'total' => '70000',
+            'sales_price_raw' => '106785',
             'sales_price' => '106785',
             'extended_price' => '106785',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -224,10 +240,11 @@ return [
             'part_section' => '',
             'purchase_price' => '800000',
             'total' => '800000',
+            'sales_price_raw' => '1423800',
             'sales_price' => '1423800',
             'extended_price' => '1423800',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -237,10 +254,11 @@ return [
             'part_section' => '',
             'purchase_price' => '75000',
             'total' => '75000',
+            'sales_price_raw' => '160177.5',
             'sales_price' => '160178',
             'extended_price' => '160178',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -250,23 +268,25 @@ return [
             'part_section' => '',
             'purchase_price' => '665000',
             'total' => '665000',
+            'sales_price_raw' => '1483125',
             'sales_price' => '1483125',
             'extended_price' => '1483125',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
             'uom' => 'ea',
             'part_number' => 'MF407010',
-            'part_description' => 'Stud exhaust',
+            'part_description' => 'Stud exhaust ',
             'part_section' => '',
             'purchase_price' => '195000',
             'total' => '585000',
+            'sales_price_raw' => '47460',
             'sales_price' => '47460',
             'extended_price' => '142380',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -276,10 +296,11 @@ return [
             'part_section' => '',
             'purchase_price' => '1450000',
             'total' => '1450000',
+            'sales_price_raw' => '5517225',
             'sales_price' => '5517225',
             'extended_price' => '5517225',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -289,10 +310,11 @@ return [
             'part_section' => '',
             'purchase_price' => '55000',
             'total' => '55000',
+            'sales_price_raw' => '100852.5',
             'sales_price' => '100853',
             'extended_price' => '100853',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -302,10 +324,11 @@ return [
             'part_section' => '',
             'purchase_price' => '125000',
             'total' => '125000',
+            'sales_price_raw' => '533925',
             'sales_price' => '533925',
             'extended_price' => '533925',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -315,10 +338,11 @@ return [
             'part_section' => '',
             'purchase_price' => '150000',
             'total' => '300000',
+            'sales_price_raw' => '169500',
             'sales_price' => '169500',
             'extended_price' => '339000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -328,10 +352,11 @@ return [
             'part_section' => '',
             'purchase_price' => '650000',
             'total' => '650000',
+            'sales_price_raw' => '734500',
             'sales_price' => '734500',
             'extended_price' => '734500',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -341,10 +366,11 @@ return [
             'part_section' => '',
             'purchase_price' => '2600000',
             'total' => '2600000',
+            'sales_price_raw' => '4800000',
             'sales_price' => '4800000',
             'extended_price' => '4800000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -354,10 +380,11 @@ return [
             'part_section' => '',
             'purchase_price' => '30000',
             'total' => '60000',
+            'sales_price_raw' => '33900',
             'sales_price' => '33900',
             'extended_price' => '67800',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -367,10 +394,11 @@ return [
             'part_section' => '',
             'purchase_price' => '1470000',
             'total' => '1470000',
+            'sales_price_raw' => '3678150',
             'sales_price' => '3678150',
             'extended_price' => '3678150',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -380,10 +408,11 @@ return [
             'part_section' => '',
             'purchase_price' => '180000',
             'total' => '180000',
+            'sales_price_raw' => '237300',
             'sales_price' => '237300',
             'extended_price' => '237300',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -393,10 +422,11 @@ return [
             'part_section' => '',
             'purchase_price' => '40000',
             'total' => '40000',
+            'sales_price_raw' => '110000',
             'sales_price' => '110000',
             'extended_price' => '110000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -406,10 +436,11 @@ return [
             'part_section' => '',
             'purchase_price' => '550000',
             'total' => '550000',
+            'sales_price_raw' => '1186500',
             'sales_price' => '1186500',
             'extended_price' => '1186500',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -419,23 +450,25 @@ return [
             'part_section' => '',
             'purchase_price' => '1100000',
             'total' => '1100000',
+            'sales_price_raw' => '2429500',
             'sales_price' => '2429500',
             'extended_price' => '2429500',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
             'uom' => 'ea',
             'part_number' => 'ME013726',
-            'part_description' => 'Ring Seal (Elbow Exhaust)',
+            'part_description' => 'Ring Seal (Elbow Exhaust) ',
             'part_section' => '',
             'purchase_price' => '90000',
             'total' => '180000',
+            'sales_price_raw' => '135000',
             'sales_price' => '135000',
             'extended_price' => '270000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -445,10 +478,11 @@ return [
             'part_section' => '',
             'purchase_price' => '3150000',
             'total' => '3150000',
+            'sales_price_raw' => '5650000',
             'sales_price' => '5650000',
             'extended_price' => '5650000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -458,10 +492,11 @@ return [
             'part_section' => '',
             'purchase_price' => '165000',
             'total' => '165000',
+            'sales_price_raw' => '293800',
             'sales_price' => '293800',
             'extended_price' => '293800',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -471,10 +506,11 @@ return [
             'part_section' => '',
             'purchase_price' => '9500',
             'total' => '19000',
+            'sales_price_raw' => '53393',
             'sales_price' => '53393',
             'extended_price' => '106786',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '8',
@@ -484,10 +520,11 @@ return [
             'part_section' => '',
             'purchase_price' => '65000',
             'total' => '520000',
+            'sales_price_raw' => '73450',
             'sales_price' => '73450',
             'extended_price' => '587600',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -497,10 +534,11 @@ return [
             'part_section' => '',
             'purchase_price' => '80000',
             'total' => '320000',
+            'sales_price_raw' => '210000',
             'sales_price' => '210000',
             'extended_price' => '840000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -510,10 +548,11 @@ return [
             'part_section' => '',
             'purchase_price' => '80000',
             'total' => '320000',
+            'sales_price_raw' => '210000',
             'sales_price' => '210000',
             'extended_price' => '840000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -523,10 +562,11 @@ return [
             'part_section' => '',
             'purchase_price' => '75000',
             'total' => '300000',
+            'sales_price_raw' => '116000',
             'sales_price' => '116000',
             'extended_price' => '464000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -536,10 +576,11 @@ return [
             'part_section' => '',
             'purchase_price' => '75000',
             'total' => '300000',
+            'sales_price_raw' => '116000',
             'sales_price' => '116000',
             'extended_price' => '464000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -549,10 +590,11 @@ return [
             'part_section' => '',
             'purchase_price' => '6300000',
             'total' => '6300000',
+            'sales_price_raw' => '',
             'sales_price' => '',
-            'extended_price' => '',
+            'extended_price' => '0',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -562,10 +604,11 @@ return [
             'part_section' => '',
             'purchase_price' => '71000',
             'total' => '71000',
+            'sales_price_raw' => '135000',
             'sales_price' => '135000',
             'extended_price' => '135000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -575,10 +618,11 @@ return [
             'part_section' => '',
             'purchase_price' => '35000',
             'total' => '35000',
+            'sales_price_raw' => '115000',
             'sales_price' => '115000',
             'extended_price' => '115000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
@@ -588,10 +632,11 @@ return [
             'part_section' => '',
             'purchase_price' => '30000',
             'total' => '90000',
+            'sales_price_raw' => '',
             'sales_price' => '',
-            'extended_price' => '',
+            'extended_price' => '0',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -601,10 +646,11 @@ return [
             'part_section' => '',
             'purchase_price' => '150000',
             'total' => '150000',
+            'sales_price_raw' => '',
             'sales_price' => '',
-            'extended_price' => '',
+            'extended_price' => '0',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -614,10 +660,11 @@ return [
             'part_section' => '',
             'purchase_price' => '2150000',
             'total' => '2150000',
+            'sales_price_raw' => '5220000',
             'sales_price' => '5220000',
             'extended_price' => '5220000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -627,10 +674,11 @@ return [
             'part_section' => '',
             'purchase_price' => '40000',
             'total' => '160000',
+            'sales_price_raw' => '770000',
             'sales_price' => '770000',
             'extended_price' => '3080000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -640,192 +688,207 @@ return [
             'part_section' => '',
             'purchase_price' => '40000',
             'total' => '160000',
+            'sales_price_raw' => '770000',
             'sales_price' => '770000',
             'extended_price' => '3080000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME017240',
-            'part_description' => 'Oil Seal Slinger CS',
+            'part_description' => 'Oil Seal Slinger CS ',
             'part_section' => '',
             'purchase_price' => '216000',
             'total' => '216000',
+            'sales_price_raw' => '320000',
             'sales_price' => '320000',
             'extended_price' => '320000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'MC844972',
-            'part_description' => 'Gauge Unit Temp',
+            'part_description' => 'Gauge Unit Temp ',
             'part_section' => '',
             'purchase_price' => '907000',
             'total' => '907000',
+            'sales_price_raw' => '1320000',
             'sales_price' => '1320000',
             'extended_price' => '1320000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME225075',
-            'part_description' => 'Pipe Vacum',
+            'part_description' => 'Pipe Vacum ',
             'part_section' => '',
             'purchase_price' => '109000',
             'total' => '109000',
+            'sales_price_raw' => '260000',
             'sales_price' => '260000',
             'extended_price' => '260000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'MC859062',
-            'part_description' => 'Switch Engine Pressure',
+            'part_description' => 'Switch Engine Pressure ',
             'part_section' => '',
             'purchase_price' => '760000',
             'total' => '760000',
+            'sales_price_raw' => '940000',
             'sales_price' => '940000',
             'extended_price' => '940000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME994676',
-            'part_description' => 'Bolt Drain Plug',
+            'part_description' => 'Bolt Drain Plug ',
             'part_section' => '',
             'purchase_price' => '465000',
             'total' => '465000',
+            'sales_price_raw' => '720000',
             'sales_price' => '720000',
             'extended_price' => '720000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME013359',
-            'part_description' => 'Valve Oil Cooler',
+            'part_description' => 'Valve Oil Cooler ',
             'part_section' => '',
             'purchase_price' => '244000',
             'total' => '244000',
+            'sales_price_raw' => '475000',
             'sales_price' => '475000',
             'extended_price' => '475000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
-            'part_number' => 3117546100,
-            'part_description' => 'Benjo (Eye Bolt)',
+            'part_number' => '3117546100',
+            'part_description' => 'Benjo (Eye Bolt) ',
             'part_section' => '',
             'purchase_price' => '65000',
             'total' => '65000',
+            'sales_price_raw' => '123000',
             'sales_price' => '123000',
             'extended_price' => '123000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME016571',
-            'part_description' => 'Cap Fuel Return',
+            'part_description' => 'Cap Fuel Return ',
             'part_section' => '',
             'purchase_price' => '75000',
             'total' => '75000',
+            'sales_price_raw' => '165000',
             'sales_price' => '165000',
             'extended_price' => '165000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
             'uom' => 'ea',
             'part_number' => 'ME702236',
-            'part_description' => 'Eye Bolt',
+            'part_description' => 'Eye Bolt ',
             'part_section' => '',
             'purchase_price' => '65000',
             'total' => '130000',
+            'sales_price_raw' => '125000',
             'sales_price' => '125000',
             'extended_price' => '250000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME702232',
-            'part_description' => 'Eye Bolt',
+            'part_description' => 'Eye Bolt ',
             'part_section' => '',
             'purchase_price' => '102000',
             'total' => '102000',
+            'sales_price_raw' => '214000',
             'sales_price' => '214000',
             'extended_price' => '214000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME224981',
-            'part_description' => 'Tube Fuel Line',
+            'part_description' => 'Tube Fuel Line ',
             'part_section' => '',
             'purchase_price' => '99000',
             'total' => '99000',
+            'sales_price_raw' => '330000',
             'sales_price' => '330000',
             'extended_price' => '330000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
             'uom' => 'ea',
             'part_number' => 'MH037087',
-            'part_description' => 'Eye Bolt',
+            'part_description' => 'Eye Bolt ',
             'part_section' => '',
             'purchase_price' => '130000',
             'total' => '260000',
+            'sales_price_raw' => '450000',
             'sales_price' => '450000',
             'extended_price' => '900000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME016894',
-            'part_description' => 'Plug Fuel Filter',
+            'part_description' => 'Plug Fuel Filter ',
             'part_section' => '',
             'purchase_price' => '19000',
             'total' => '19000',
+            'sales_price_raw' => '64000',
             'sales_price' => '64000',
             'extended_price' => '64000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'MH035067',
-            'part_description' => 'Gasket Fuel Filter',
+            'part_description' => 'Gasket Fuel Filter ',
             'part_section' => '',
             'purchase_price' => '14000',
             'total' => '14000',
+            'sales_price_raw' => '45000',
             'sales_price' => '45000',
             'extended_price' => '45000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -835,114 +898,123 @@ return [
             'part_section' => '',
             'purchase_price' => '829500',
             'total' => '829500',
+            'sales_price_raw' => '1200000',
             'sales_price' => '1200000',
             'extended_price' => '1200000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
             'uom' => 'ea',
             'part_number' => 'ME728997',
-            'part_description' => 'Spring Injection Pump Cover',
+            'part_description' => 'Spring Injection Pump Cover ',
             'part_section' => '',
             'purchase_price' => '78000',
             'total' => '156000',
+            'sales_price_raw' => '130000',
             'sales_price' => '130000',
             'extended_price' => '260000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
             'uom' => 'ea',
             'part_number' => 'MH000999',
-            'part_description' => 'Bolt Engine Control',
+            'part_description' => 'Bolt Engine Control ',
             'part_section' => '',
             'purchase_price' => '27000',
             'total' => '54000',
+            'sales_price_raw' => '82000',
             'sales_price' => '82000',
             'extended_price' => '164000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME418239',
-            'part_description' => 'Cap Assy',
+            'part_description' => 'Cap Assy ',
             'part_section' => '',
             'purchase_price' => '459000',
             'total' => '459000',
+            'sales_price_raw' => '620000',
             'sales_price' => '620000',
             'extended_price' => '620000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME226396',
-            'part_description' => 'Insulator Ex manifold',
+            'part_description' => 'Insulator Ex manifold ',
             'part_section' => '',
             'purchase_price' => '1650000',
             'total' => '1650000',
+            'sales_price_raw' => '1950000',
             'sales_price' => '1950000',
             'extended_price' => '1950000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'MH000703',
-            'part_description' => 'Bolt Alternator',
+            'part_description' => 'Bolt Alternator ',
             'part_section' => '',
             'purchase_price' => '119000',
             'total' => '119000',
+            'sales_price_raw' => '250000',
             'sales_price' => '250000',
             'extended_price' => '250000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'MF434106',
-            'part_description' => 'Nut Alternator',
+            'part_description' => 'Nut Alternator ',
             'part_section' => '',
             'purchase_price' => '19000',
             'total' => '19000',
+            'sales_price_raw' => '',
             'sales_price' => '',
-            'extended_price' => '',
+            'extended_price' => '0',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME226063',
-            'part_description' => 'Bracket Acc Cable',
+            'part_description' => 'Bracket Acc Cable  ',
             'part_section' => '',
             'purchase_price' => '138000',
             'total' => '138000',
+            'sales_price_raw' => '215000',
             'sales_price' => '215000',
             'extended_price' => '215000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
             'uom' => 'ea',
             'part_number' => 'ME229404',
-            'part_description' => 'Tube T/C Oil Return',
+            'part_description' => 'Tube T/C Oil Return ',
             'part_section' => '',
             'purchase_price' => '164000',
             'total' => '164000',
+            'sales_price_raw' => '320000',
             'sales_price' => '320000',
             'extended_price' => '320000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -952,10 +1024,11 @@ return [
             'part_section' => '',
             'purchase_price' => '13100',
             'total' => '52400',
+            'sales_price_raw' => '33000',
             'sales_price' => '33000',
             'extended_price' => '132000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -965,10 +1038,11 @@ return [
             'part_section' => '',
             'purchase_price' => '5200',
             'total' => '10400',
+            'sales_price_raw' => '60000',
             'sales_price' => '60000',
             'extended_price' => '120000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -978,10 +1052,11 @@ return [
             'part_section' => '',
             'purchase_price' => '162000',
             'total' => '162000',
+            'sales_price_raw' => '385000',
             'sales_price' => '385000',
             'extended_price' => '385000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -991,10 +1066,11 @@ return [
             'part_section' => '',
             'purchase_price' => '55000',
             'total' => '55000',
+            'sales_price_raw' => '96000',
             'sales_price' => '96000',
             'extended_price' => '96000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1004,10 +1080,11 @@ return [
             'part_section' => '',
             'purchase_price' => '228000',
             'total' => '228000',
+            'sales_price_raw' => '340000',
             'sales_price' => '340000',
             'extended_price' => '340000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -1017,10 +1094,11 @@ return [
             'part_section' => '',
             'purchase_price' => '45400',
             'total' => '181600',
+            'sales_price_raw' => '80000',
             'sales_price' => '80000',
             'extended_price' => '320000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -1030,10 +1108,11 @@ return [
             'part_section' => '',
             'purchase_price' => '33000',
             'total' => '66000',
+            'sales_price_raw' => '75000',
             'sales_price' => '75000',
             'extended_price' => '150000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -1043,10 +1122,11 @@ return [
             'part_section' => '',
             'purchase_price' => '390000',
             'total' => '780000',
+            'sales_price_raw' => '75000',
             'sales_price' => '75000',
             'extended_price' => '150000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '6',
@@ -1056,10 +1136,11 @@ return [
             'part_section' => '',
             'purchase_price' => '48000',
             'total' => '288000',
+            'sales_price_raw' => '73000',
             'sales_price' => '73000',
             'extended_price' => '438000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1069,10 +1150,11 @@ return [
             'part_section' => '',
             'purchase_price' => '38000',
             'total' => '38000',
+            'sales_price_raw' => '68000',
             'sales_price' => '68000',
             'extended_price' => '68000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
@@ -1082,10 +1164,11 @@ return [
             'part_section' => '',
             'purchase_price' => '797900',
             'total' => '2393700',
+            'sales_price_raw' => '980000',
             'sales_price' => '980000',
             'extended_price' => '2940000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
@@ -1095,10 +1178,11 @@ return [
             'part_section' => '',
             'purchase_price' => '7575',
             'total' => '22725',
+            'sales_price_raw' => '12500',
             'sales_price' => '12500',
             'extended_price' => '37500',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -1108,10 +1192,11 @@ return [
             'part_section' => '',
             'purchase_price' => '717100',
             'total' => '1434200',
+            'sales_price_raw' => '940000',
             'sales_price' => '940000',
             'extended_price' => '1880000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1121,10 +1206,11 @@ return [
             'part_section' => '',
             'purchase_price' => '98980',
             'total' => '98980',
+            'sales_price_raw' => '180000',
             'sales_price' => '180000',
             'extended_price' => '180000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '4',
@@ -1134,10 +1220,11 @@ return [
             'part_section' => '',
             'purchase_price' => '1818',
             'total' => '7272',
+            'sales_price_raw' => '5500',
             'sales_price' => '5500',
             'extended_price' => '22000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1147,10 +1234,11 @@ return [
             'part_section' => '',
             'purchase_price' => '9300000',
             'total' => '9300000',
+            'sales_price_raw' => '13560000',
             'sales_price' => '13560000',
             'extended_price' => '13560000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1160,10 +1248,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '320000',
             'sales_price' => '320000',
             'extended_price' => '320000',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1173,10 +1262,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '1638500',
             'sales_price' => '1638500',
             'extended_price' => '1638500',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -1186,10 +1276,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '112717.5',
             'sales_price' => '112718',
-            'extended_price' => '225436',
+            'extended_price' => '225435',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '2',
@@ -1199,10 +1290,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '23730',
             'sales_price' => '23730',
             'extended_price' => '47460',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '6',
@@ -1212,10 +1304,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '12458.25',
             'sales_price' => '12458',
-            'extended_price' => '74748',
+            'extended_price' => '74750',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '6',
@@ -1225,10 +1318,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '6525.75',
             'sales_price' => '6526',
-            'extended_price' => '39156',
+            'extended_price' => '39155',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '1',
@@ -1238,10 +1332,11 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '2906925',
             'sales_price' => '2906925',
             'extended_price' => '2906925',
             'total_manual' => false,
-            'extended_manual' => false
+            'extended_manual' => false,
         ],
         [
             'qty' => '3',
@@ -1251,12 +1346,13 @@ return [
             'part_section' => '',
             'purchase_price' => '0',
             'total' => '0',
+            'sales_price_raw' => '30000',
             'sales_price' => '30000',
             'extended_price' => '90000',
             'total_manual' => false,
-            'extended_manual' => false
-        ]
+            'extended_manual' => false,
+        ],
     ],
     'styles' => [],
-    'notes' => []
+    'notes' => [],
 ];

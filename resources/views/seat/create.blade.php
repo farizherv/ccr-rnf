@@ -26,9 +26,13 @@
           method="POST"
           enctype="multipart/form-data"
           x-data="manageSeatCreate()"
+          x-init="init()"
           @remove-seat-item.window="removeItem($event.detail)">
 
         @csrf
+
+        {{-- simpan tab terakhir (biar pas validation error balik ke tab yang sama) --}}
+        <input type="hidden" name="active_tab" x-model="tab">
 
         {{-- =============== HEADER CARD =============== --}}
         <div class="header-card-master">
@@ -44,7 +48,36 @@
             </div>
         </div>
 
+        {{-- =============== TABS =============== --}}
+        <div class="tabbar">
+            <button type="button"
+                    class="tabbtn"
+                    :class="{ 'active': tab === 'ccr' }"
+                    @click="tab='ccr'">
+                CCR SEAT
+            </button>
+
+            <button type="button"
+                    class="tabbtn"
+                    :class="{ 'active': tab === 'parts' }"
+                    @click="tab='parts'">
+                Parts &amp; Labour Worksheet
+            </button>
+
+            <button type="button"
+                    class="tabbtn"
+                    :class="{ 'active': tab === 'detail' }"
+                    @click="tab='detail'">
+                Detail
+            </button>
+        </div>
+
         <div class="accent-line"></div>
+
+        {{-- =========================================================
+        TAB: CCR (INFO + ITEM)
+        ========================================================== --}}
+        <div x-show="tab === 'ccr'" x-cloak>
 
         {{-- =============== HEADER INFORMATION =============== --}}
         <div class="box">
@@ -189,7 +222,19 @@
 
         </div>
 
-        {{-- =============== SUBMIT =============== --}}
+        </div> {{-- end tab: ccr --}}
+
+        {{-- =========================================================
+        TAB: PARTS
+        ========================================================== --}}
+        @include('seat.partials.parts_worksheet')
+
+        {{-- =========================================================
+        TAB: DETAIL
+        ========================================================== --}}
+        @include('seat.partials.detail_worksheet')
+
+        {{-- =============== SUBMIT (tampil di semua tab) =============== --}}
         <button type="submit"
                 class="btn-modern btn-success full-width"
                 style="margin-top:8px;">
@@ -275,9 +320,34 @@ function manageSeatCreate() {
     });
 
     return {
+        tab: @json(old('active_tab', 'ccr')),
+
         newItems: keys.length ? keys : [0],
         counter: keys.length ? keys.length : 1,
         descriptions: descMap,
+
+        init(){
+            if (!this.tab) this.tab = 'ccr';
+
+            // init TomSelect hanya saat tab CCR aktif
+            this.$watch('tab', (val) => {
+                if (val === 'ccr') this.$nextTick(() => this.ensureTomSelect());
+            });
+            if (this.tab === 'ccr') this.$nextTick(() => this.ensureTomSelect());
+        },
+
+        ensureTomSelect(){
+            if (!window.TomSelect) return;
+            if (window.__seatCreateTSInited) return;
+            window.__seatCreateTSInited = true;
+
+            try {
+                new TomSelect('#make_seat', { create:false });
+                new TomSelect('#customer_seat', { create:false, maxOptions:500 });
+            } catch (e) {
+                console.warn('TomSelect init skipped:', e);
+            }
+        },
 
         addItem() {
             const key = this.counter++;
@@ -305,14 +375,6 @@ function manageSeatCreate() {
 <link href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    new TomSelect('#make_seat', { create:false });
-    new TomSelect('#customer_seat', { create:false, maxOptions:500 });
-});
-</script>
-
-
 {{-- =============== STYLE (SAMA DENGAN EDIT-SEAT, DI-SCOPE BIAR NAV AMAN) =============== --}}
 <style>
     .seat-create-page,
@@ -321,6 +383,23 @@ document.addEventListener('DOMContentLoaded', function () {
     .seat-create-page *::after{
         box-sizing: border-box;
     }
+
+    .seat-create-page [x-cloak]{ display:none !important; }
+
+    .seat-create-page .tabbar{ display:flex; gap:10px; flex-wrap:wrap; margin: 0 0 12px; }
+    .seat-create-page .tabbtn{
+        border:1px solid #cfd3d7;
+        background:#f6f7f8;
+        padding:10px 14px;
+        border-radius:10px;
+        font-weight:800;
+        cursor:pointer;
+        transition:.2s;
+        color:#0f172a;
+    }
+    .seat-create-page .tabbtn.active{ background:#0d6efd; border-color:#0d6efd; color:#fff; }
+    .seat-create-page .tabbtn:hover{ transform: translateY(-1px); }
+
 
     .seat-create-page .header-card-master {
         background: #ffffff;

@@ -1,6 +1,6 @@
 {{-- =========================================================
-TAB: PARTS & LABOUR WORKSHEET (EXCEL-LIKE)
-File: resources/views/engine/partials/parts_worksheet.blade.php
+TAB: PARTS & LABOUR WORKSHEET (SEAT - EXCEL-LIKE)
+File: resources/views/seat/partials/parts_worksheet.blade.php
 ========================================================= --}}
 
 @php
@@ -28,43 +28,46 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   if (!is_array($styles)) $styles = [];
   if (!is_array($notes))  $notes = [];
 
-  // kompatibilitas nama lama
-  $parts = $rows;
-
   // meta
   $meta = (isset($payload['meta']) && is_array($payload['meta'])) ? $payload['meta'] : [];
 
-  // default rows: khusus blank = 22, selain itu tetap 100 (atau mengikuti meta/rows template)
-  $initialTemplateKeyForRows = $meta['template_key'] ?? 'engine_blank';
-  $defaultRowsCount = ($initialTemplateKeyForRows === 'engine_blank') ? 22 : 100;
+  // default rows: seat_blank = 30, selain itu 100
+  $initialTemplateKeyForRows = $meta['template_key'] ?? 'seat_blank';
+  $defaultRowsCount = ($initialTemplateKeyForRows === 'seat_blank') ? 30 : 100;
 
   $meta = array_merge([
     'no_unit' => '',
     'rows_count' => $defaultRowsCount,
-    'footer_total_mode' => 'auto',
-    'footer_extended_mode' => 'auto',
+    'footer_extended_mode' => 'auto', // seat: fokus extended
   ], $meta);
 
   $noUnit = $meta['no_unit'] ?? '';
-  $footerTotal = $meta['footer_total'] ?? '';
-  $footerExtended = $meta['footer_extended'] ?? '';
 
-  $footerTotalMode    = $meta['footer_total_mode'] ?? '';     // 'manual' | 'auto' | ''
+  $footerExtended = $meta['footer_extended'] ?? '';
   $footerExtendedMode = $meta['footer_extended_mode'] ?? '';  // 'manual' | 'auto' | ''
 
-  // template meta (Opsi A)
-  $initialTemplateKey     = $meta['template_key'] ?? 'engine_blank';
+  // template meta
+  $initialTemplateKey     = $meta['template_key'] ?? 'seat_blank';
   $initialTemplateVersion = $meta['template_version'] ?? 'v1';
 
   // =========================================================
   // 2) DROPDOWN LISTS (aman walau controller tidak kirim)
   // =========================================================
-  // Prefer template-scoped datalists (engine templates). No more resources/data/* include.
-  $datalists = $datalists ?? \App\Support\WorksheetTemplates\EngineTemplateRepo::datalists($initialTemplateKey);
+  // Prefer seat template repo (fallback ke engine repo bila class belum ada)
+  $datalists = $datalists ?? null;
+  if (!is_array($datalists)) {
+    if (class_exists('\App\Support\WorksheetTemplates\SeatTemplateRepo')) {
+      $datalists = \App\Support\WorksheetTemplates\SeatTemplateRepo::datalists($initialTemplateKey);
+    } elseif (class_exists('\App\Support\WorksheetTemplates\EngineTemplateRepo')) {
+      $datalists = \App\Support\WorksheetTemplates\EngineTemplateRepo::datalists($initialTemplateKey);
+    } else {
+      $datalists = [];
+    }
+  }
   if (!is_array($datalists)) $datalists = [];
 
-  $uomList = $uomList ?? ($datalists['uom'] ?? []);
-  $partDescList = $partDescList ?? ($datalists['part_description'] ?? []);
+  $uomList         = $uomList ?? ($datalists['uom'] ?? []);
+  $partDescList    = $partDescList ?? ($datalists['part_description'] ?? []);
   $partSectionList = $partSectionList ?? ($datalists['part_section'] ?? []);
 
   if (!is_array($uomList)) $uomList = [];
@@ -74,7 +77,6 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   // templates list (kalau controller tidak kirim) + fallback dari registry
   $templates = $templates ?? null;
 
-  // kalau controller ngirim associative array (key => meta), normalisasi jadi list
   $normalizeTemplates = function ($raw) {
     $out = [];
     if (!is_array($raw)) return $out;
@@ -114,12 +116,11 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     return $out;
   };
 
-  // 1) normalisasi kalau ada dari controller
   $templates = $normalizeTemplates($templates);
 
-  // 2) fallback: load dari resources/worksheet_templates/engine/registry.php
+  // fallback registry seat
   if (!is_array($templates) || count($templates) === 0) {
-    $registryPath = resource_path('worksheet_templates/engine/registry.php');
+    $registryPath = resource_path('worksheet_templates/seat/registry.php');
     if (file_exists($registryPath)) {
       $raw = include $registryPath;
       $templates = $normalizeTemplates($raw);
@@ -128,54 +129,50 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     }
   }
 
-  // 3) guard: minimal harus ada engine_blank
+  // guard: minimal harus ada seat_blank
   $hasBlank = false;
   foreach ($templates as $t) {
-    if (is_array($t) && ($t['key'] ?? '') === 'engine_blank') { $hasBlank = true; break; }
+    if (is_array($t) && ($t['key'] ?? '') === 'seat_blank') { $hasBlank = true; break; }
   }
   if (!$hasBlank) {
-    $templates[] = ['key' => 'engine_blank', 'name' => 'Engine Blank', 'version' => 'v1', 'notes' => 'Template kosong'];
+    $templates[] = ['key' => 'seat_blank', 'name' => 'Seat Blank', 'version' => 'v1', 'notes' => 'Template kosong'];
   }
 
   // =========================================================
-  // 4) URL + STORAGE KEY (unik per report + per user agar tidak ketuker antar akun)
+  // 3) URL + STORAGE KEY (unik per report + per user)
   // =========================================================
   $userId = auth()->check() ? (int) auth()->id() : 0;
 
-  // local autosave key (per user + per report/create + per halaman)
-  $storageKey = 'ccr_parts_ws_' . ($userId ? ('u'.$userId.'_') : 'guest_')
+  $storageKey = 'ccr_seat_parts_ws_' . ($userId ? ('u'.$userId.'_') : 'guest_')
               . ($reportId ? ('r'.$reportId) : 'create')
               . '_' . md5(url()->current());
 
-  // remember template per user
   $templateRememberKey = $userId
-    ? ('ccr_engine_last_template_u' . $userId)
-    : 'ccr_engine_last_template_guest';
+    ? ('ccr_seat_last_template_u' . $userId)
+    : 'ccr_seat_last_template_guest';
 
-  $autosaveUrl = $reportId ? route('engine.worksheet.autosave', ['id' => $reportId]) : null;
-
-@endphp
-
-@php
-  $templateDefaultsUrl = \Illuminate\Support\Facades\Route::has('engine.worksheet.template.defaults')
-    ? route('engine.worksheet.template.defaults')
+  $autosaveUrl = $reportId && \Illuminate\Support\Facades\Route::has('seat.worksheet.autosave')
+    ? route('seat.worksheet.autosave', ['id' => $reportId])
     : null;
 @endphp
 
+@php
+  $templateDefaultsUrl = \Illuminate\Support\Facades\Route::has('seat.worksheet.template.defaults')
+    ? route('seat.worksheet.template.defaults')
+    : null;
+@endphp
 
 <div x-show="tab==='parts'" x-cloak
-     x-data="partsWS({
+     x-data="seatPartsWS({
         initialRows: @js($rows),
         initialStyles: @js($styles),
         initialNotes: @js($notes),
         initialNoUnit: @js($noUnit),
 
-        initialFooterTotal: @js($footerTotal),
         initialFooterExtended: @js($footerExtended),
-        initialFooterTotalMode: @js($footerTotalMode),
         initialFooterExtendedMode: @js($footerExtendedMode),
 
-        initialMeta: @js($meta),  
+        initialMeta: @js($meta),
 
         partDescList: @js($partDescList),
         partSectionList: @js($partSectionList),
@@ -198,9 +195,9 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
      :class="isFs ? 'ws-shell--fs' : ''"
      @keydown.capture="onKey($event)">
 
-  <h3 class="ws-title" style="margin-bottom:6px;">Parts &amp; Labour Worksheet</h3>
+  <h3 class="ws-title" style="margin-bottom:6px;">Parts &amp; Labour Worksheet (Seat)</h3>
   <p class="ws-desc" style="font-size:13px; color:#64748b; margin-bottom:14px;">
-    Template “Sheet Parts & Labour Worksheet” (Autosave). Formula dasar aktif;
+    Layout mengikuti Excel Seat (Qty × Sales → Extended). AutoSave aktif.
   </p>
 
   {{-- TOP BAR: autosave + zoom + template --}}
@@ -273,7 +270,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                @input="rowsTarget = onlyDigits(rowsTarget)"
                @change="applyRowsTarget()"
                @keydown.enter.prevent="applyRowsTarget()"
-               placeholder="20">
+               placeholder="30">
       </div>
 
       <div class="ws-rowsinfo">
@@ -460,27 +457,26 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
 
   {{-- SHEET --}}
   <div class="ws-wrap">
-    {{-- datalist UOM (native) --}}
-    <datalist id="ws_uom_list">
+    {{-- datalist UOM --}}
+    <datalist id="ws_seat_uom_list">
       @foreach((is_array($uomList ?? null) ? $uomList : []) as $opt)
         <option value="{{ $opt }}"></option>
       @endforeach
     </datalist>
 
-    {{-- datalist Part Description (native seperti UOM) --}}
-    <datalist id="ws_part_desc_list">
+    {{-- datalist Part Description --}}
+    <datalist id="ws_seat_part_desc_list">
       @foreach((is_array($partDescList ?? null) ? $partDescList : []) as $opt)
         <option value="{{ $opt }}"></option>
       @endforeach
     </datalist>
 
-    {{-- datalist Part Section (native seperti UOM) --}}
-    <datalist id="ws_part_section_list">
+    {{-- datalist Part Section --}}
+    <datalist id="ws_seat_part_section_list">
       @foreach((is_array($partSectionList ?? null) ? $partSectionList : []) as $opt)
         <option value="{{ $opt }}"></option>
       @endforeach
     </datalist>
-
 
     <div class="ws-tablewrap"
          x-ref="tablewrap"
@@ -489,26 +485,24 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
          @mouseout="onLeaveNote($event)">
 
       <div class="ws-zoomTarget" x-ref="zoomTarget">
-        <table class="ws-table">
+        <table class="ws-table ws-table--seat">
           <thead>
             <tr>
               <th style="width:70px;">Items<br>No</th>
-              <th style="width:80px;">Qty</th>
-              <th style="width:100px;">UOM</th>
-              <th style="width:180px;">Part Number</th>
-              <th style="width:240px;">Part Description</th>
-              <th style="width:190px;">Part Section</th>
-              <th style="width:180px;">Purchase Price</th>
-              <th style="width:190px;">Total</th>
-              <th style="width:180px;">Sales Price</th>
-              <th style="width:180px;">Extended Price</th>
+              <th style="width:90px;">Quantity</th>
+              <th style="width:90px;">Uom</th>
+              <th style="width:220px;">Part Number</th>
+              <th style="width:280px;">Part Description</th>
+              <th style="width:240px;">Part Section</th>
+              <th style="width:200px;">Sales Price</th>
+              <th style="width:220px;">Extended Price</th>
             </tr>
           </thead>
 
           <tbody>
             <template x-for="(r, i) in rows" :key="r._id">
               <tr>
-                {{-- A --}}
+                {{-- A: Items No --}}
                 <td>
                   <div class="ws-box ws-box--no ws-cell"
                        tabindex="0"
@@ -523,7 +517,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                   </div>
                 </td>
 
-                {{-- B --}}
+                {{-- B: Quantity --}}
                 <td>
                   <input type="text" class="ws-inp ws-inp--center ws-cell"
                          :class="cellClass(i,1)"
@@ -541,10 +535,10 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                          inputmode="numeric" placeholder="0">
                 </td>
 
-                {{-- C (UOM dropdown + bisa ketik) --}}
+                {{-- C: UOM --}}
                 <td>
                   <input type="text" class="ws-inp ws-inp--center ws-cell"
-                         list="ws_uom_list"
+                         list="ws_seat_uom_list"
                          autocomplete="off"
                          :class="cellClass(i,2)"
                          :style="cellStyle(i,2)"
@@ -554,10 +548,10 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                          @mouseenter="onCellMouseEnter($event,i,2)"
                          x-model="r.uom"
                          @input="r.uom = cleanText(r.uom); onChanged()"
-                         placeholder="ea/set">
+                         placeholder="ea">
                 </td>
 
-                {{-- D --}}
+                {{-- D: Part Number --}}
                 <td>
                   <input type="text" class="ws-inp ws-cell"
                          autocomplete="off"
@@ -571,10 +565,10 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                          @input="r.part_number = cleanText(r.part_number); onChanged()">
                 </td>
 
-                {{-- E (Part Description dropdown ketik: datalist seperti UOM) --}}
+                {{-- E: Part Description --}}
                 <td>
                   <input type="text" class="ws-inp ws-cell"
-                         list="ws_part_desc_list"
+                         list="ws_seat_part_desc_list"
                          autocomplete="off"
                          :class="cellClass(i,4)"
                          :style="cellStyle(i,4)"
@@ -586,10 +580,10 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                          @input="r.part_description = cleanText(r.part_description); onChanged()">
                 </td>
 
-                {{-- F (Part Section dropdown ketik: datalist seperti UOM) --}}
+                {{-- F: Part Section --}}
                 <td>
                   <input type="text" class="ws-inp ws-cell"
-                         list="ws_part_section_list"
+                         list="ws_seat_part_section_list"
                          autocomplete="off"
                          :class="cellClass(i,5)"
                          :style="cellStyle(i,5)"
@@ -601,89 +595,50 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                          @input="r.part_section = cleanText(r.part_section); onChanged()">
                 </td>
 
-                {{-- G (Purchase Price) --}}
+                {{-- G: Sales Price --}}
                 <td>
                   <div class="money">
-                    <span class="rp" :style="rpStyle(i,6)">Rp</span>
-                    <input type="text" class="ws-inp moneyinput ws-cell"
-                           :class="cellClass(i,6)"
+                    <span class="rp" :style="rpStyle(i,6)" x-show="hasDigits(r.sales_price)">Rp</span>
+                    <input type="text"
+                           class="ws-inp ws-cell"
+                           :class="[
+                              cellClass(i,6),
+                              hasDigits(r.sales_price) ? 'moneyinput' : 'moneyinput--dash'
+                           ].join(' ')"
                            :style="cellStyle(i,6)"
                            data-cell="1" :data-row="i" data-col="6"
                            @focus="setActive(i,6,true)"
                            @mousedown="onCellMouseDown($event,i,6)"
                            @mouseenter="onCellMouseEnter($event,i,6)"
-                           :value="formatDots(r.purchase_price)"
+                           :value="hasDigits(r.sales_price) ? formatDots(r.sales_price) : ''"
                            @input="
-                             r.purchase_price = onlyDigits($event.target.value);
-                             $event.target.value = formatDots(r.purchase_price);
-                             recalcRow(i,'purchase');
+                             r.sales_price_raw = normalizeMoneyRaw($event.target.value);
+                             r.sales_price = rawToRupiahDigits(r.sales_price_raw);
+                             $event.target.value = formatDots(r.sales_price);
+                             recalcRow(i,'sales');
                              onChanged();
                            "
                            inputmode="numeric"
-                           placeholder="0">
+                           :placeholder="hasDigits(r.sales_price) ? '0' : '-'">
                   </div>
                 </td>
 
-                {{-- H (Total = Qty * Purchase, auto tapi bisa override) --}}
+                {{-- H: Extended Price (Qty × Sales, auto tapi bisa override) --}}
                 <td>
                   <div class="money">
-                    <span class="rp" :style="rpStyle(i,7)">Rp</span>
-                    <input type="text" class="ws-inp moneyinput ws-cell"
-                           :class="cellClass(i,7)"
+                    <span class="rp" :style="rpStyle(i,7)" x-show="hasDigits(r.extended_price)">Rp</span>
+                    <input type="text"
+                           class="ws-inp ws-cell"
+                           :class="[
+                              cellClass(i,7),
+                              hasDigits(r.extended_price) ? 'moneyinput' : 'moneyinput--dash'
+                           ].join(' ')"
                            :style="cellStyle(i,7)"
                            data-cell="1" :data-row="i" data-col="7"
                            @focus="setActive(i,7,true)"
                            @mousedown="onCellMouseDown($event,i,7)"
                            @mouseenter="onCellMouseEnter($event,i,7)"
-                           :value="formatDots(r.total)"
-                           @input="
-                             r.total = onlyDigits($event.target.value);
-                             $event.target.value = formatDots(r.total);
-                             setManual(i,'total', r.total);
-                             updateAutoFooters();
-                             onChanged();
-                           "
-                           inputmode="numeric"
-                           placeholder="0">
-                  </div>
-                </td>
-
-                {{-- I (Sales Price) --}}
-                <td>
-                  <div class="money">
-                    <span class="rp" :style="rpStyle(i,8)">Rp</span>
-                    <input type="text" class="ws-inp moneyinput ws-cell"
-                          :class="cellClass(i,8)"
-                          :style="cellStyle(i,8)"
-                          data-cell="1" :data-row="i" data-col="8"
-                          @focus="setActive(i,8,true)"
-                          @mousedown="onCellMouseDown($event,i,8)"
-                          @mouseenter="onCellMouseEnter($event,i,8)"
-                          :value="formatDots(r.sales_price)"
-                          @input="
-                            r.sales_price_raw = normalizeMoneyRaw($event.target.value);
-                            r.sales_price = rawToRupiahDigits(r.sales_price_raw);     // untuk tampilan (0 desimal)
-                            $event.target.value = formatDots(r.sales_price);
-                            recalcRow(i,'sales');
-                            onChanged();
-                          "
-                          inputmode="numeric"
-                          placeholder="0">
-                  </div>
-                </td>
-
-                {{-- J (Extended = Qty * Sales, auto tapi bisa override) --}}
-                <td>
-                  <div class="money">
-                    <span class="rp" :style="rpStyle(i,9)">Rp</span>
-                    <input type="text" class="ws-inp moneyinput ws-cell"
-                           :class="cellClass(i,9)"
-                           :style="cellStyle(i,9)"
-                           data-cell="1" :data-row="i" data-col="9"
-                           @focus="setActive(i,9,true)"
-                           @mousedown="onCellMouseDown($event,i,9)"
-                           @mouseenter="onCellMouseEnter($event,i,9)"
-                           :value="formatDots(r.extended_price)"
+                           :value="hasDigits(r.extended_price) ? formatDots(r.extended_price) : ''"
                            @input="
                              r.extended_price = onlyDigits($event.target.value);
                              $event.target.value = formatDots(r.extended_price);
@@ -692,52 +647,28 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                              onChanged();
                            "
                            inputmode="numeric"
-                           placeholder="0">
+                           :placeholder="hasDigits(r.extended_price) ? '0' : '-'">
                   </div>
                 </td>
               </tr>
             </template>
           </tbody>
 
-          {{-- FOOTER: otomatis sum (tapi tetap bisa override: isi angka => manual, kosongkan => balik auto) --}}
+          {{-- FOOTER: total Extended (auto/manual) --}}
           <tfoot>
             <tr>
               <td colspan="7" class="ws-tfoot-pad"></td>
 
-              {{-- H footer total --}}
-              <td class="ws-tfoot-money">
-                <div class="money">
-                  <span class="rp">Rp</span>
-                  <input type="text" class="ws-inp moneyinput ws-inp--tfoot"
-                        :value="formatDots(displayFooterTotal())"
-                        @input="
-                          footerTotal = onlyDigits($event.target.value);
-                          $event.target.value = formatDots(footerTotal);
-                          footerTotalManual = (footerTotal !== '');
-                          if (!footerTotalManual) footerTotal = '';
-
-                          onChanged();
-                        "
-                        inputmode="numeric"
-                        placeholder="0">
-                </div>
-              </td>
-
-              {{-- I blank --}}
-              <td class="ws-tfoot-pad"></td>
-
-              {{-- J footer extended --}}
               <td class="ws-tfoot-money">
                 <div class="money">
                   <span class="rp">Rp</span>
                   <input type="text" class="ws-inp moneyinput ws-inp--tfoot"
                         :value="formatDots(displayFooterExtended())"
                         @input="
-                          footerExtended = onlyDigits($event.target.value);          // ✅ FIX: extended
-                          $event.target.value = formatDots(footerExtended);          // ✅ FIX: extended
-                          footerExtendedManual = (footerExtended !== '');            // ✅ FIX: extended
-                          if (!footerExtendedManual) footerExtended = '';            // ✅ FIX: extended
-
+                          footerExtended = onlyDigits($event.target.value);
+                          $event.target.value = formatDots(footerExtended);
+                          footerExtendedManual = (footerExtended !== '');
+                          if (!footerExtendedManual) footerExtended = '';
                           onChanged();
                         "
                         inputmode="numeric"
@@ -746,7 +677,6 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
               </td>
             </tr>
           </tfoot>
-
         </table>
       </div>
     </div>
@@ -759,14 +689,14 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     </div>
   </div>
 
-  {{-- TEMPLATE MODAL (Opsi A) --}}
+  {{-- TEMPLATE MODAL --}}
   <div class="ws-modal" x-show="tpl.open" x-transition @keydown.escape.window="closeTemplateModal()">
     <div class="ws-modal__backdrop" @click="closeTemplateModal()"></div>
     <div class="ws-modal__card" @click.stop>
       <div class="ws-modal__head">
         <div>
           <div class="ws-modal__title">Pilih Template</div>
-          <div class="ws-modal__sub">Template ini akan mengisi data default worksheet (NOTE: Jika sudah isi data dan mau merubah untuk apply template yang lain maka data yang sudah terisi akan HILANG / RESET).</div>
+          <div class="ws-modal__sub">Apply template akan mengisi default worksheet. Jika sudah ada data, apply akan me-reset data.</div>
         </div>
         <button type="button" class="ws-modal__x" @click="closeTemplateModal()">✕</button>
       </div>
@@ -775,7 +705,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
         <input type="text" class="ws-modal__search"
                x-model="tpl.q"
                @input="filterTemplates()"
-               placeholder="Cari template… (contoh: 4D34T / Canter)">
+               placeholder="Cari template… (contoh: ISRI / Seat)">
 
         <div class="ws-modal__list">
           <template x-for="t in tpl.filtered" :key="t.key">
@@ -819,46 +749,38 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   /* ===== SHELL + FULLSCREEN ===== */
   .ws-shell{position:relative;}
 
-.ws-shell--fs{
-  position:fixed; inset:0;
-  z-index:90000;               /* di atas layout */
-  width:100vw; height:100dvh;
+  .ws-shell--fs{
+    position:fixed; inset:0;
+    z-index:90000;
+    width:100vw; height:100dvh;
+    max-width:none !important;
+    margin:0 !important;
+    border-radius:0 !important;
+    background:#f1f5f9;
+    padding:10px;
+    display:flex; flex-direction:column;
+    gap:10px;
+    overflow:hidden !important;
+  }
 
-  /* lawan style .box / container yang suka nahan lebar */
-  max-width:none !important;
-  margin:0 !important;
-  border-radius:0 !important;
+  .ws-shell--fs .ws-title,
+  .ws-shell--fs .ws-desc{ display:none !important; }
 
-  background:#f1f5f9;
-  padding:10px;                /* boleh 0 kalau mau lebih “Excel” */
-  display:flex; flex-direction:column;
-  gap:10px;
-  overflow:hidden !important;
-}
+  .ws-shell--fs .ws-wrap{
+    flex:1 1 auto;
+    min-height:0;
+    border-radius:0;
+    border:0;
+  }
 
-/* ✅ screenshot 1: judul + deskripsi tidak ikut fullscreen */
-.ws-shell--fs .ws-title,
-.ws-shell--fs .ws-desc{
-  display:none !important;
-}
-
-/* ✅ sheet benar-benar ambil sisa tinggi layar */
-.ws-shell--fs .ws-wrap{
-  flex:1 1 auto;
-  min-height:0;
-  border-radius:0;             /* biar berasa Excel */
-  border:0;
-}
-
-/* ✅ scroll area tabel full tinggi, tidak kepotong max-height 560 */
-.ws-shell--fs .ws-tablewrap{
-  flex:1 1 auto;
-  min-height:0;
-  max-height:none !important;
-  height:auto !important;
-  overflow:auto;
-  -webkit-overflow-scrolling: touch;
-}
+  .ws-shell--fs .ws-tablewrap{
+    flex:1 1 auto;
+    min-height:0;
+    max-height:none !important;
+    height:auto !important;
+    overflow:auto;
+    -webkit-overflow-scrolling: touch;
+  }
 
   /* ===== TOP BAR ===== */
   .ws-topbar{
@@ -986,24 +908,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     overflow:hidden;
     display:flex; flex-direction:column;
   }
-
-  .ws-tablewrap{
-    overflow:auto;
-    max-height:560px;
-  }
-
-  .ws-shell--fs .ws-wrap{flex:1 1 auto;min-height:0;}
-  .ws-shell--fs .ws-tablewrap{
-    flex:1 1 auto;
-    min-height:0;
-    max-height:none;
-    height:100%;
-    overflow:auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
+  .ws-tablewrap{ overflow:auto; max-height:560px; }
   .ws-zoomTarget{transform-origin:0 0; display:inline-block;}
-
   .ws-table{
     border-collapse:collapse;
     font-size:13px;
@@ -1012,60 +918,37 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     min-width:100%;
   }
 
-  /* ===== KUNCI WIDTH KOLOM ===== */
-  .ws-table thead th:nth-child(1),
-  .ws-table tbody td:nth-child(1),
-  .ws-table tfoot td:nth-child(1){ width:70px; min-width:70px; }
-  .ws-table thead th:nth-child(2),
-  .ws-table tbody td:nth-child(2),
-  .ws-table tfoot td:nth-child(2){ width:80px; min-width:80px; }
-  .ws-table thead th:nth-child(3),
-  .ws-table tbody td:nth-child(3),
-  .ws-table tfoot td:nth-child(3){ width:100px; min-width:100px; }
-  .ws-table thead th:nth-child(4),
-  .ws-table tbody td:nth-child(4),
-  .ws-table tfoot td:nth-child(4){ width:180px; min-width:180px; }
-  .ws-table thead th:nth-child(5),
-  .ws-table tbody td:nth-child(5),
-  .ws-table tfoot td:nth-child(5){ width:240px; min-width:240px; }
-  .ws-table thead th:nth-child(6),
-  .ws-table tbody td:nth-child(6),
-  .ws-table tfoot td:nth-child(6){ width:190px; min-width:190px; }
-  .ws-table thead th:nth-child(7),
-  .ws-table tbody td:nth-child(7),
-  .ws-table tfoot td:nth-child(7){ width:180px; min-width:180px; }
-  .ws-table thead th:nth-child(8),
-  .ws-table tbody td:nth-child(8),
-  .ws-table tfoot td:nth-child(8){ width:190px; min-width:190px; }
-  .ws-table thead th:nth-child(9),
-  .ws-table tbody td:nth-child(9),
-  .ws-table tfoot td:nth-child(9){ width:180px; min-width:180px; }
-  .ws-table thead th:nth-child(10),
-  .ws-table tbody td:nth-child(10),
-  .ws-table tfoot td:nth-child(10){ width:180px; min-width:180px; }
+  /* Seat: grid tebal seperti screenshot */
+  .ws-table--seat td,
+  .ws-table--seat th{
+    border:2px solid #111 !important;
+  }
 
   /* sticky header */
   .ws-table thead th{
     position:sticky; top:0; z-index:2;
     background:#0b0b0b;color:#fff;
-    padding:10px;border-right:1px solid #111;
-    font-weight:900;white-space:nowrap;
+    padding:10px;
+    font-weight:900;
+    white-space:nowrap;
   }
-  .ws-table thead th::after{content:" ▾";opacity:.85;font-weight:900;}
-  .ws-table td{border-top:1px solid #eef2f7;border-right:1px solid #f1f5f9;padding:8px;background:#fff;}
+
+  .ws-table tbody td{
+    padding:6px;
+    background:#fff;
+  }
   .ws-table tbody tr:focus-within td{background:#eff6ff;}
 
-  /* footer row sticky bottom */
+  /* footer sticky bottom */
   .ws-table tfoot td{
     background:#fff;
-    border-top:2px solid #e5e7eb;
     padding:8px;
     position:sticky;
     bottom:0;
     z-index:3;
   }
-  .ws-tfoot-pad{ background:#fff; }
-  .ws-tfoot-money{ background:#f8fafc; }
+  .ws-tfoot-pad{ background:#0b0b0b; border-color:#0b0b0b !important; }
+  .ws-tfoot-money{ background:#fff; }
 
   /* inputs */
   .ws-inp{
@@ -1088,8 +971,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     box-shadow:0 0 0 3px rgba(34,197,94,.18);
   }
   .ws-inp--tfoot{
-    background:#f8fafc;
-    border-color:#e2e8f0;
+    background:#fff;
+    border-color:#111;
     font-weight:900;
   }
 
@@ -1110,11 +993,16 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   .ws-box--no{justify-content:center;font-weight:900;}
 
   /* money */
-  .money{position:relative;display:flex;align-items:center;}
+  .money{position:relative;display:flex;align-items:center;width:100%;}
   .money .rp{
     position:absolute;left:10px;font-weight:900;pointer-events:none;color:inherit;
   }
   .moneyinput{padding-left:34px !important;text-align:right !important;}
+  .moneyinput--dash{
+    padding-left:10px !important;
+    text-align:center !important;
+    font-weight:900 !important;
+  }
 
   /* selection */
   .ws-cell.is-sel{
@@ -1216,8 +1104,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
 
 <script>
 document.addEventListener('alpine:init', () => {
-  Alpine.data('partsWS', (cfg) => ({
-    storageKey: cfg.storageKey || ('ccr_parts_ws_' + window.location.pathname),
+  Alpine.data('seatPartsWS', (cfg) => ({
+    storageKey: cfg.storageKey || ('ccr_seat_parts_ws_' + window.location.pathname),
     reportId: cfg.reportId || null,
     autosaveUrl: cfg.autosaveUrl || '',
     csrf: cfg.csrf || (document.querySelector('meta[name=csrf-token]')?.content || ''),
@@ -1227,16 +1115,12 @@ document.addEventListener('alpine:init', () => {
     noUnit: cfg.initialNoUnit || '',
     rowsTarget: '',
 
-    // footer (manual/auto)
-    footerTotal: cfg.initialFooterTotal || '',
+    // footer (manual/auto) - seat only Extended
     footerExtended: cfg.initialFooterExtended || '',
-    footerTotalManual: false,
     footerExtendedManual: false,
-    footerAutoTotal: '',
     footerAutoExtended: '',
 
-    // sync subtotal ke Detail Worksheet
-    _lastEmitFooters: { t:'', e:'' },
+    _lastEmitFooters: { e:'' },
     _emitFootersTimer: null,
 
     // dropdown lists
@@ -1252,7 +1136,7 @@ document.addEventListener('alpine:init', () => {
 
     // remember template
     userId: cfg.userId || 0,
-    templateRememberKey: cfg.templateRememberKey || ('ccr_engine_last_template_u' + (cfg.userId || 0)),
+    templateRememberKey: cfg.templateRememberKey || ('ccr_seat_last_template_u' + (cfg.userId || 0)),
 
     // template modal state
     tpl: { open:false, q:'', filtered:[], selectedKey:'', needConfirm:false },
@@ -1313,46 +1197,35 @@ document.addEventListener('alpine:init', () => {
       const raw = (m.rows_count ?? m.rowsCount ?? m.rows ?? m.row_count ?? '');
       let n = parseInt(String(raw || ''), 10);
       if (!Number.isFinite(n) || n <= 0) n = parseInt(String(fallback || ''), 10);
-      if (!Number.isFinite(n) || n <= 0) n = 100;
+      if (!Number.isFinite(n) || n <= 0) n = 30;
       n = Math.max(1, Math.min(500, n));
       return n;
     },
     padRowsTo(want){
-      want = Math.max(1, Math.min(500, parseInt(String(want || ''), 10) || 100));
+      want = Math.max(1, Math.min(500, parseInt(String(want || ''), 10) || 30));
       if (!Array.isArray(this.rows)) this.rows = [];
       while (this.rows.length < want) this.rows.push(this.makeRow({}));
       if (!this.rows.length) this.rows = Array.from({ length: want }).map(() => this.makeRow({}));
     },
     applyMetaFrom(meta){
       if (!meta || typeof meta !== 'object') return;
-
       if ('no_unit' in meta) this.noUnit = String(meta.no_unit || '');
 
-      if ('footer_total_mode' in meta) {
-        this.footerTotalManual = (String(meta.footer_total_mode || '').toLowerCase() === 'manual');
-      }
       if ('footer_extended_mode' in meta) {
         this.footerExtendedManual = (String(meta.footer_extended_mode || '').toLowerCase() === 'manual');
       }
-
       if ('template_key' in meta) this.templateKey = String(meta.template_key || this.templateKey || '');
       if ('template_version' in meta) this.templateVersion = String(meta.template_version || this.templateVersion || '');
-
-      if (this.footerTotalManual && ('footer_total' in meta)) this.footerTotal = String(meta.footer_total || '');
-      if (!this.footerTotalManual) this.footerTotal = this.footerTotal || '';
 
       if (this.footerExtendedManual && ('footer_extended' in meta)) this.footerExtended = String(meta.footer_extended || '');
       if (!this.footerExtendedManual) this.footerExtended = this.footerExtended || '';
     },
 
     /* =========================================================
-     * INIT (FIXED)
+     * INIT
      * ========================================================= */
     init() {
-      // footer mode (jaga data lama)
-      const ftMode = (cfg.initialFooterTotalMode || '').toLowerCase();
       const feMode = (cfg.initialFooterExtendedMode || '').toLowerCase();
-      this.footerTotalManual = (ftMode === 'manual');
       this.footerExtendedManual = (feMode === 'manual');
 
       const d = this.loadDraft();
@@ -1363,7 +1236,6 @@ document.addEventListener('alpine:init', () => {
         (cfg.initialStyles && typeof cfg.initialStyles === 'object' && Object.keys(cfg.initialStyles).length) ||
         (cfg.initialNotes  && typeof cfg.initialNotes  === 'object' && Object.keys(cfg.initialNotes).length) ||
         String(cfg.initialNoUnit||'').trim() ||
-        String(cfg.initialFooterTotal||'').trim() ||
         String(cfg.initialFooterExtended||'').trim()
       );
 
@@ -1373,15 +1245,13 @@ document.addEventListener('alpine:init', () => {
         this.applyMetaFrom(cfgMeta);
 
         this.noUnit = cfg.initialNoUnit || this.noUnit;
-        this.footerTotal = cfg.initialFooterTotal || this.footerTotal;
         this.footerExtended = cfg.initialFooterExtended || this.footerExtended;
 
         this.rows   = (Array.isArray(cfg.initialRows) ? cfg.initialRows : []).map(r => this.makeRow(r));
         this.styles = (cfg.initialStyles && typeof cfg.initialStyles === 'object') ? cfg.initialStyles : {};
         this.notes  = (cfg.initialNotes  && typeof cfg.initialNotes  === 'object') ? cfg.initialNotes  : {};
 
-        // ✅ rows_count dari META SERVER (bukan draft)
-        const want = this.readRowsCount(cfgMeta, this.rows.length || 100);
+        const want = this.readRowsCount(cfgMeta, this.rows.length || 30);
         this.padRowsTo(Math.max(this.rows.length || 0, want));
       };
 
@@ -1393,7 +1263,7 @@ document.addEventListener('alpine:init', () => {
         this.styles = (d.styles && typeof d.styles === 'object') ? d.styles : {};
         this.notes  = (d.notes  && typeof d.notes  === 'object') ? d.notes  : {};
 
-        const want = this.readRowsCount(d.meta || {}, this.rows.length || 100);
+        const want = this.readRowsCount(d.meta || {}, this.rows.length || 30);
         this.padRowsTo(Math.max(this.rows.length || 0, want));
 
         this.saveStatus = d.ts
@@ -1402,19 +1272,16 @@ document.addEventListener('alpine:init', () => {
       };
 
       if (this.reportId) {
-        // EDIT: selalu prefer DB
         applyFromCfg();
-        // fallback draft cuma kalau DB benar2 kosong
         if (!dbHasAny && hasUsableDraft) applyFromDraft();
       } else {
-        // CREATE: prefer draft
         if (hasUsableDraft) {
           applyFromDraft();
         } else {
           applyFromCfg();
 
           const remembered = this.loadRememberedTemplate();
-          const stillDefault = !this.templateKey || this.templateKey === 'engine_blank';
+          const stillDefault = !this.templateKey || this.templateKey === 'seat_blank';
           if (remembered && remembered.key && stillDefault) {
             this.templateKey = remembered.key;
             this.templateVersion = remembered.version || 'v1';
@@ -1422,7 +1289,6 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
-      // default template safety
       if (!this.templateKey && this.templates.length) {
         this.templateKey = this.templates[0].key;
         this.templateVersion = this.templates[0].version || '';
@@ -1431,7 +1297,6 @@ document.addEventListener('alpine:init', () => {
         if (t) this.templateVersion = t.version || '';
       }
 
-      // recalc awal
       this.rows.forEach((_, i) => this.recalcRow(i, 'init', true));
       this.updateAutoFooters();
       this.rowsTarget = String(this.rows.length);
@@ -1441,13 +1306,10 @@ document.addEventListener('alpine:init', () => {
         this.focusCell(0,1);
       });
 
-      // autosave draft on leaving page
       window.addEventListener('beforeunload', () => this.saveDraft(true));
 
-      // mouse drag selection safety
       this._onMouseUp = () => { this.dragging = false; };
       window.addEventListener('mouseup', this._onMouseUp);
-
       this._onMouseLeave = () => { this.dragging = false; };
       window.addEventListener('mouseleave', this._onMouseLeave);
 
@@ -1456,8 +1318,8 @@ document.addEventListener('alpine:init', () => {
 
     bindClearOnSubmit(){
       const form = this.$el.closest('form');
-      if (!form || form.__ccrPartsWsBound) return;
-      form.__ccrPartsWsBound = true;
+      if (!form || form.__ccrSeatPartsWsBound) return;
+      form.__ccrSeatPartsWsBound = true;
 
       form.addEventListener('submit', () => {
         try { localStorage.removeItem(this.storageKey); } catch(e) {}
@@ -1505,7 +1367,7 @@ document.addEventListener('alpine:init', () => {
       const hasAny = last >= 0;
       const hasStyles = this.styles && Object.keys(this.styles).length > 0;
       const hasNotes  = this.notes  && Object.keys(this.notes).length > 0;
-      const hasFooter = String(this.footerTotal||'').trim() || String(this.footerExtended||'').trim();
+      const hasFooter = String(this.footerExtended||'').trim();
       return !(hasAny || hasStyles || hasNotes || hasFooter);
     },
     normalizeTemplatePayload(raw){
@@ -1519,11 +1381,8 @@ document.addEventListener('alpine:init', () => {
       const notes  = (raw.notes  && typeof raw.notes  === 'object') ? raw.notes  : {};
       return { meta, rows, styles, notes };
     },
-
-    // ✅ JSON key bisa beda-beda: parts / parts_defaults / parts_payload ...
     extractTemplateDefaults(json){
       const o = (json && typeof json === 'object') ? json : {};
-
       const parts =
         o.parts ??
         o.parts_defaults ??
@@ -1532,19 +1391,8 @@ document.addEventListener('alpine:init', () => {
         o.partsPayload ??
         (o.data && (o.data.parts ?? o.data.parts_defaults ?? o.data.parts_payload)) ??
         {};
-
-      const detail =
-        o.detail ??
-        o.detail_defaults ??
-        o.detailDefault ??
-        o.detail_payload ??
-        o.detailPayload ??
-        (o.data && (o.data.detail ?? o.data.detail_defaults ?? o.data.detail_payload)) ??
-        {};
-
-      return { parts, detail };
+      return { parts };
     },
-
     async getTemplateDefaults(key) {
       if (this._tplCache && this._tplCache[key]) return this._tplCache[key];
       if (!this.templateDefaultsUrl) throw new Error('templateDefaultsUrl belum diset');
@@ -1586,24 +1434,13 @@ document.addEventListener('alpine:init', () => {
         const payload = await this.getTemplateDefaults(key);
         const extracted = this.extractTemplateDefaults(payload);
         const rawParts  = extracted.parts || {};
-        const rawDetail = extracted.detail || {};
 
         const def = this.normalizeTemplatePayload(rawParts);
 
-        // meta
         if (def.meta && typeof def.meta === 'object') {
           const meta = def.meta;
 
           if ('no_unit' in meta) this.noUnit = String(meta.no_unit || '');
-
-          const ftMode = String(meta.footer_total_mode || '').toLowerCase();
-          if (ftMode === 'manual') {
-            this.footerTotalManual = true;
-            this.footerTotal = ('footer_total' in meta) ? String(meta.footer_total || '') : '';
-          } else {
-            this.footerTotalManual = false;
-            this.footerTotal = '';
-          }
 
           const feMode = String(meta.footer_extended_mode || '').toLowerCase();
           if (feMode === 'manual') {
@@ -1615,9 +1452,8 @@ document.addEventListener('alpine:init', () => {
           }
         }
 
-        // rows/styles/notes
         this.rows = (Array.isArray(def.rows) ? def.rows : []).map(r => this.makeRow(r));
-        if (!this.rows.length) this.rows = Array.from({ length: 100 }).map(() => this.makeRow({}));
+        if (!this.rows.length) this.rows = Array.from({ length: 30 }).map(() => this.makeRow({}));
         this.rowsTarget = String(this.rows.length);
 
         this.styles = (def.styles && typeof def.styles === 'object') ? def.styles : {};
@@ -1630,12 +1466,11 @@ document.addEventListener('alpine:init', () => {
 
         this.rows.forEach((_, i) => this.recalcRow(i, 'tpl', true));
         this.updateAutoFooters();
-
-        this.dispatchPartsTotals(this.displayFooterExtended());
+        this.emitFootersChanged(true);
         this.onChanged();
 
-        window.dispatchEvent(new CustomEvent('ccr:engineTemplateApplied', {
-          detail: { key, version: this.templateVersion, detailPayload: rawDetail, replace: true }
+        window.dispatchEvent(new CustomEvent('ccr:seatTemplateApplied', {
+          detail: { key, version: this.templateVersion, replace: true }
         }));
 
         this.tpl.needConfirm = false;
@@ -1677,16 +1512,7 @@ document.addEventListener('alpine:init', () => {
       const spRaw  = this.normalizeMoneyRaw(r.sales_price_raw ?? r.sales_price ?? '');
       const spDisp = this.rawToRupiahDigits(spRaw);
 
-      const totalDigits = this.onlyDigits(r.total ?? '');
-      const extDigits   = this.onlyDigits(r.extended_price ?? '');
-
-      let totalManual;
-      if (typeof r.total_manual === 'boolean') totalManual = r.total_manual;
-      else if (totalDigits === '') totalManual = false;
-      else {
-        const exp = this.mulMoney(r.qty ?? '', r.purchase_price ?? '');
-        totalManual = (this.onlyDigits(exp) !== totalDigits);
-      }
+      const extDigits = this.onlyDigits(r.extended_price ?? '');
 
       let extManual;
       if (typeof r.extended_manual === 'boolean') extManual = r.extended_manual;
@@ -1704,12 +1530,9 @@ document.addEventListener('alpine:init', () => {
         part_number: (r.part_number ?? ''),
         part_description: (r.part_description ?? ''),
         part_section: (r.part_section ?? ''),
-        purchase_price: this.onlyDigits(r.purchase_price ?? ''),
-        total: this.onlyDigits(r.total ?? ''),
         sales_price: spDisp,
         sales_price_raw: spRaw,
         extended_price: this.onlyDigits(r.extended_price ?? ''),
-        total_manual: totalManual,
         extended_manual: extManual,
       };
     },
@@ -1717,6 +1540,7 @@ document.addEventListener('alpine:init', () => {
     uid() { return 'r_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); },
 
     onlyDigits(v){ return String(v||'').replace(/[^\d]/g,''); },
+    hasDigits(v){ return this.onlyDigits(v) !== ''; },
     cleanText(v){
       return String(v||'')
         .replace(/\u00A0/g,' ')
@@ -1736,12 +1560,6 @@ document.addEventListener('alpine:init', () => {
       const d = this.onlyDigits(v);
       if (!d) return 0n;
       try { return BigInt(d); } catch(e) { return 0n; }
-    },
-    mulMoney(qty, price){
-      const q = this.toBigInt(qty);
-      const p = this.toBigInt(price);
-      if (q === 0n || p === 0n) return '';
-      return (q * p).toString();
     },
 
     normalizeMoneyRaw(v){
@@ -1832,15 +1650,7 @@ document.addEventListener('alpine:init', () => {
      * ========================================================= */
     setManual(i, which, digits){
       digits = this.onlyDigits(digits);
-
-      if (which === 'total') {
-        if (digits === '') {
-          this.rows[i].total_manual = false;
-          this.recalcRow(i, 'total_clear', true);
-        } else {
-          this.rows[i].total_manual = true;
-        }
-      } else if (which === 'extended') {
+      if (which === 'extended') {
         if (digits === '') {
           this.rows[i].extended_manual = false;
           this.recalcRow(i, 'ext_clear', true);
@@ -1857,11 +1667,6 @@ document.addEventListener('alpine:init', () => {
 
       r.qty = this.onlyDigits(r.qty);
 
-      if (!r.total_manual) {
-        const t = this.mulMoney(r.qty || '', r.purchase_price || '');
-        r.total = t ? String(t) : '';
-      }
-
       if (!r.extended_manual) {
         const cents = this.mulMoneyCents(r.qty || '', (r.sales_price_raw || r.sales_price || ''));
         r.extended_price = this.centsToRupiahDigits(cents, true);
@@ -1871,13 +1676,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     updateAutoFooters(){
-      let sumT = 0n, hasT = false;
       let sumE_cents = 0n, hasE = false;
 
       for (const r of this.rows) {
-        const t = this.onlyDigits(r.total);
-        if (t !== '') { hasT = true; sumT += this.toBigInt(t); }
-
         if (r.extended_manual) {
           const e = this.onlyDigits(r.extended_price);
           if (e !== '') { hasE = true; sumE_cents += (this.toBigInt(e) * 100n); }
@@ -1887,63 +1688,27 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
-      this.footerAutoTotal = hasT ? sumT.toString() : '';
       this.footerAutoExtended = hasE ? this.centsToRupiahDigits(sumE_cents, true) : '';
-
       this.emitFootersChangedDebounced();
     },
 
-    displayFooterTotal(){
-      return this.footerTotalManual ? this.onlyDigits(this.footerTotal) : this.onlyDigits(this.footerAutoTotal);
-    },
     displayFooterExtended(){
       return this.footerExtendedManual ? this.onlyDigits(this.footerExtended) : this.onlyDigits(this.footerAutoExtended);
     },
 
     emitFootersChanged(force=false){
-      const t = String(this.displayFooterTotal() || '');
       const e = String(this.displayFooterExtended() || '');
+      if (!force && this._lastEmitFooters && e === this._lastEmitFooters.e) return;
+      this._lastEmitFooters = { e };
 
-      if (!force && this._lastEmitFooters && t === this._lastEmitFooters.t && e === this._lastEmitFooters.e) return;
-      this._lastEmitFooters = { t, e };
-
-      this.dispatchPartsTotals(e);
-
-      window.__ccrPartsFooters = {
-        total: t,
-        extended: e,
-        total_fmt: this.formatDots(t),
-        extended_fmt: this.formatDots(e),
-        reportId: this.reportId || null
-      };
-
-      window.dispatchEvent(new CustomEvent('ccr:partsFootersChanged', { detail: window.__ccrPartsFooters }));
-      window.dispatchEvent(new CustomEvent('ccr:partsFooterTotalChanged',   { detail: { value: t, value_fmt: this.formatDots(t), reportId: this.reportId||null } }));
-      window.dispatchEvent(new CustomEvent('ccr:partsFooterExtendedChanged',{ detail: { value: e, value_fmt: this.formatDots(e), reportId: this.reportId||null } }));
-      window.dispatchEvent(new CustomEvent('ccr:totalSubtotalChanged',    { detail: { value: t, value_fmt: this.formatDots(t) } }));
+      // event seat (untuk sinkron ke detail seat)
+      window.dispatchEvent(new CustomEvent('ccr:seatPartsFootersChanged', { detail: { extended: e, extended_fmt: this.formatDots(e), reportId: this.reportId || null } }));
       window.dispatchEvent(new CustomEvent('ccr:extendedSubtotalChanged', { detail: { value: e, value_fmt: this.formatDots(e) } }));
     },
 
     emitFootersChangedDebounced(){
       if (this._emitFootersTimer) clearTimeout(this._emitFootersTimer);
       this._emitFootersTimer = setTimeout(() => this.emitFootersChanged(false), 80);
-    },
-
-    emitExtendedSubtotal(){
-      this.emitFootersChangedDebounced();
-    },
-
-    dispatchPartsTotals(totalExtendedDigits) {
-      const v = String(totalExtendedDigits ?? '').replace(/[^\d]/g,'');
-      if (v === '') return;
-
-      window.dispatchEvent(new CustomEvent('ccr:enginePartsTotalsChanged', {
-        detail: { total_extended_price: v, sub_total_parts: v, total_parts: v, ts: Date.now() }
-      }));
-
-      window.dispatchEvent(new CustomEvent('ccr:enginePartsTotals', {
-        detail: { total_extended_price: v, sub_total_parts: v, total_parts: v }
-      }));
     },
 
     /* =========================================================
@@ -1988,7 +1753,7 @@ document.addEventListener('alpine:init', () => {
       this.onChanged();
       this.sel = null;
 
-      this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 9)));
+      this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 7)));
     },
 
     applyRowsTarget() {
@@ -2009,7 +1774,7 @@ document.addEventListener('alpine:init', () => {
       this.updateAutoFooters();
       this.onChanged();
       this.sel = null;
-      this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 9)));
+      this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 7)));
     },
 
     lastNonEmptyIndex() {
@@ -2021,8 +1786,6 @@ document.addEventListener('alpine:init', () => {
           String(r.part_number||'').trim() ||
           String(r.part_description||'').trim() ||
           String(r.part_section||'').trim() ||
-          String(r.purchase_price||'').trim() ||
-          String(r.total||'').trim() ||
           String(r.sales_price||'').trim() ||
           String(r.extended_price||'').trim()
         ) return i;
@@ -2170,7 +1933,7 @@ document.addEventListener('alpine:init', () => {
       if (resetSelection) { this.anchor = {r,c}; this.sel = {ar:r, ac:c, br:r, bc:c}; }
     },
     cellLabel(){
-      const letters = ['A','B','C','D','E','F','G','H','I','J'];
+      const letters = ['A','B','C','D','E','F','G','H'];
       const col = letters[this.activeCol] || '?';
       return `${col}${this.activeRow + 1}`;
     },
@@ -2185,7 +1948,7 @@ document.addEventListener('alpine:init', () => {
 
     focusCell(r,c){
       r = Math.max(0, Math.min(this.rows.length-1, r));
-      c = Math.max(0, Math.min(9, c));
+      c = Math.max(0, Math.min(7, c));
       const sel = `[data-cell="1"][data-row="${r}"][data-col="${c}"]`;
       const el = this.$el.querySelector(sel);
       if (!el) return;
@@ -2222,7 +1985,7 @@ document.addEventListener('alpine:init', () => {
      * KEYBOARD NAV
      * ========================================================= */
     moveRight(){
-      if (this.activeCol < 9) return this.focusCell(this.activeRow, this.activeCol+1);
+      if (this.activeCol < 7) return this.focusCell(this.activeRow, this.activeCol+1);
       if (this.activeRow < this.rows.length-1) return this.focusCell(this.activeRow+1, 1);
       this.rows.push(this.makeRow({}));
       this.rowsTarget = String(this.rows.length);
@@ -2232,7 +1995,7 @@ document.addEventListener('alpine:init', () => {
     },
     moveLeft(){
       if (this.activeCol > 0) return this.focusCell(this.activeRow, this.activeCol-1);
-      if (this.activeRow > 0) return this.focusCell(this.activeRow-1, 9);
+      if (this.activeRow > 0) return this.focusCell(this.activeRow-1, 7);
     },
     moveDown(){
       if (this.activeRow < this.rows.length-1) return this.focusCell(this.activeRow+1, this.activeCol);
@@ -2274,7 +2037,7 @@ document.addEventListener('alpine:init', () => {
     /* =========================================================
      * STYLES/NOTES SHIFT ON DELETE
      * ========================================================= */
-    deleteRowStyles(ri){ for (let ci=0; ci<=9; ci++){ const k = this.skey(ri,ci); if (this.styles[k]) delete this.styles[k]; } },
+    deleteRowStyles(ri){ for (let ci=0; ci<=7; ci++){ const k = this.skey(ri,ci); if (this.styles[k]) delete this.styles[k]; } },
     shiftStylesAfterDelete(deletedRi){
       const newStyles = {};
       for (const k in this.styles){
@@ -2288,7 +2051,7 @@ document.addEventListener('alpine:init', () => {
       if (this.activeRow > deletedRi) this.activeRow = Math.max(0, this.activeRow - 1);
     },
 
-    deleteRowNotes(ri){ for (let ci=0; ci<=9; ci++){ const k = this.skey(ri,ci); if (this.notes[k]) delete this.notes[k]; } },
+    deleteRowNotes(ri){ for (let ci=0; ci<=7; ci++){ const k = this.skey(ri,ci); if (this.notes[k]) delete this.notes[k]; } },
     shiftNotesAfterDelete(deletedRi){
       const newNotes = {};
       for (const k in this.notes){
@@ -2305,7 +2068,6 @@ document.addEventListener('alpine:init', () => {
      * FULLSCREEN + ZOOM
      * ========================================================= */
     toggleFullscreen() {
-      // ENTER
       if (!this.isFs) {
         this._bodyOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
@@ -2318,7 +2080,6 @@ document.addEventListener('alpine:init', () => {
         return;
       }
 
-      // EXIT
       this.isFs = false;
       document.body.style.overflow = this._bodyOverflow ?? '';
 
@@ -2333,8 +2094,8 @@ document.addEventListener('alpine:init', () => {
       this.zoom = z;
       const target = this.$refs.zoomTarget;
       if (!target) return;
-      // lebih stabil daripada 0.9
-      target.style.zoom = `${z}%`;    },
+      target.style.zoom = `${z}%`;
+    },
     zoomIn(){ this.zoom = Math.min(150, this.zoom + 5); this.applyZoom(); },
     zoomOut(){ this.zoom = Math.max(70, this.zoom - 5); this.applyZoom(); },
     zoomReset(){ this.zoom = 90; this.applyZoom(); },
@@ -2414,16 +2175,12 @@ document.addEventListener('alpine:init', () => {
         part_number: String(r.part_number||'').trim(),
         part_description: String(r.part_description||'').trim(),
         part_section: String(r.part_section||'').trim(),
-        purchase_price: this.onlyDigits(r.purchase_price),
-        total: this.onlyDigits(r.total),
         sales_price: this.onlyDigits(r.sales_price),
         sales_price_raw: this.normalizeMoneyRaw(r.sales_price_raw),
         extended_price: this.onlyDigits(r.extended_price),
-        total_manual: !!r.total_manual,
         extended_manual: !!r.extended_manual,
       }));
 
-      const finalFooterTotal = this.footerTotalManual ? this.onlyDigits(this.footerTotal) : this.onlyDigits(this.footerAutoTotal);
       const finalFooterExtended = this.footerExtendedManual ? this.onlyDigits(this.footerExtended) : this.onlyDigits(this.footerAutoExtended);
 
       return {
@@ -2431,9 +2188,7 @@ document.addEventListener('alpine:init', () => {
           no_unit: String(this.noUnit||'').trim(),
           template_key: String(this.templateKey||'').trim(),
           template_version: String(this.templateVersion||'').trim(),
-          footer_total: finalFooterTotal,
           footer_extended: finalFooterExtended,
-          footer_total_mode: this.footerTotalManual ? 'manual' : 'auto',
           footer_extended_mode: this.footerExtendedManual ? 'manual' : 'auto',
           rows_count: this.rows.length,
         },
@@ -2449,4 +2204,3 @@ document.addEventListener('alpine:init', () => {
   }));
 });
 </script>
-

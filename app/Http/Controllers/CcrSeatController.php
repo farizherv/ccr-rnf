@@ -2,17 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
-use Illuminate\Http\Request;
-use App\Models\CcrReport;
 use App\Models\CcrItem;
 use App\Models\CcrPhoto;
-use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Notification;
-use App\Notifications\CcrSubmittedNotification;
-use Illuminate\Support\Facades\Auth;
+use App\Models\CcrReport;
 use App\Support\Inbox;
+use App\Support\WorksheetTemplates\SeatTemplateRepo;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class CcrSeatController extends Controller
@@ -32,104 +30,92 @@ class CcrSeatController extends Controller
             ? include resource_path('data/brand_list.php')
             : [];
 
-        // Group customer
+        // Group customer (CV, PT, Other)
         $groupedCustomers = ['CV' => [], 'PT' => [], 'Other' => []];
         foreach ($customers as $c) {
-            if (str_starts_with($c, 'CV')) $groupedCustomers['CV'][] = $c;
-            elseif (str_starts_with($c, 'PT')) $groupedCustomers['PT'][] = $c;
-            else $groupedCustomers['Other'][] = $c;
+            if (str_starts_with($c, 'CV')) {
+                $groupedCustomers['CV'][] = $c;
+            } elseif (str_starts_with($c, 'PT')) {
+                $groupedCustomers['PT'][] = $c;
+            } else {
+                $groupedCustomers['Other'][] = $c;
+            }
         }
 
-        return view('seat.create', compact('groupFolders', 'groupedCustomers', 'brands'));
+        // Ambil list template khusus Seat
+        $templates = $this->getSeatTemplates();
+
+        return view('seat.create', compact('groupFolders', 'groupedCustomers', 'brands', 'templates'));
     }
 
     // ===========================================================
-    // STORE (HEADER + ITEM BARU)
-    // RULE BARU:
-    // - items minimal 1
-    // - tiap item harus punya: deskripsi ATAU foto
+    // STORE (HEADER + PAYLOAD TEMPLATE)
     // ===========================================================
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'group_folder'         => 'required|string',
-            'component'            => 'required|string',
-            'make'                 => 'nullable|string',
-            'model'                => 'nullable|string',
-            'unit'                 => 'nullable|string',
-            'wo_pr'                => 'nullable|string',
-            'customer'             => 'nullable|string',
-            'inspection_date'      => 'required|date',
+        $data = $request->validate([
+            'group_folder' => 'required|string',
+            'component' => 'required|string',
+            'customer' => 'nullable|string',
+            'make' => 'nullable|string',
+            'model' => 'nullable|string',
+            'sn' => 'nullable|string',
+            'smu' => 'nullable|string',
+            'unit' => 'nullable|string', // Tambahan field unit untuk Seat
+            'wo_pr' => 'nullable|string', // Tambahan field WO untuk Seat
+            'inspection_date' => 'required|string',
 
-            // ✅ minimal 1 item
-            'items'                => 'required|array|min:1',
-            'items.*.description'  => 'nullable|string',
-            'items.*.photos'       => 'nullable|array',
-            'items.*.photos.*'     => 'nullable|image|max:8000',
-        ], [
-            'items.min' => 'Minimal 1 item kerusakan harus diisi.',
+            'template_key' => 'nullable|string',
+            'template_version' => 'nullable|integer',
+            'parts_payload' => 'nullable|string',
+            'detail_payload' => 'nullable|string',
         ]);
 
-        // ✅ tiap item wajib punya deskripsi ATAU foto
-        $validator->after(function ($v) use ($request) {
-            foreach ((array) $request->input('items', []) as $index => $row) {
-                $desc = trim((string) ($row['description'] ?? ''));
-                $hasPhoto = $request->hasFile("items.$index.photos");
+        $finalDate = Carbon::parse($data['inspection_date'])->format('Y-m-d');
 
-                if ($desc === '' && !$hasPhoto) {
-                    $v->errors()->add("items.$index.description", 'Isi deskripsi atau upload minimal 1 foto pada item ini.');
-                }
-            }
-        });
+        $templateKey = $data['template_key'] ?? 'seat_blank';
+        $templateVersionInt = (int)($data['template_version'] ?? 1);
 
-        $data = $validator->validate();
+        $partsPayload = $this->decodeJsonInput($data['parts_payload'] ?? null);
+        $detailPayload = $this->decodeJsonInput($data['detail_payload'] ?? null);
 
-        // Tanggal + Jam WITA otomatis
-        $finalDate = Carbon::parse($data['inspection_date'])
-            ->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
-
-        // Simpan header report
-        $report = CcrReport::create([
-            'type'            => 'seat',
-            'group_folder'    => $data['group_folder'],
-            'component'       => $data['component'],
-            'make'            => $request->make,
-            'model'           => $request->model,
-            'unit'            => $request->unit,
-            'wo_pr'           => $request->wo_pr,
-            'customer'        => $request->customer,
-            'inspection_date' => $finalDate,
-        ]);
-
-        $report->refresh();
-
-        // Generate folder Synology
-        $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
-        $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
-        $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
-        Storage::disk('public')->makeDirectory("$folder/photos");
-
-        // Save Items
-        foreach ($data['items'] as $index => $input) {
-
-            $item = CcrItem::create([
-                'ccr_report_id' => $report->id,
-                'description'   => $input['description'] ?? '',
-            ]);
-
-            if ($request->hasFile("items.$index.photos")) {
-                foreach ($request->file("items.$index.photos") as $photo) {
-                    $path = $photo->store("$folder/photos", 'public');
-                    CcrPhoto::create([
-                        'ccr_item_id' => $item->id,
-                        'path'        => $path,
-                    ]);
-                }
-            }
+        // Fallback ke defaults jika payload kosong (User tidak pilih template tapi sistem butuh data awal)
+        if (empty($partsPayload) || empty($detailPayload)) {
+            $repo = app(SeatTemplateRepo::class);
+            $defaults = $repo->loadDefaults($templateKey, $templateVersionInt);
+            
+            if (empty($partsPayload) && !empty($defaults['parts_defaults'])) $partsPayload = $defaults['parts_defaults'];
+            if (empty($detailPayload) && !empty($defaults['detail_defaults'])) $detailPayload = $defaults['detail_defaults'];
         }
 
-        return redirect()->route('ccr.index')
-            ->with('success', 'CCR Operator Seat berhasil dibuat!');
+        // Default Sales Tax 11% untuk Seat
+        if (!isset($detailPayload['totals'])) $detailPayload['totals'] = [];
+        if (!isset($detailPayload['totals']['sales_tax_percent'])) {
+            $detailPayload['totals']['sales_tax_percent'] = 11;
+        }
+
+        $report = CcrReport::create([
+            'type' => 'seat',
+            'group_folder' => $data['group_folder'],
+            'component' => $data['component'],
+            'make' => $data['make'] ?? null,
+            'model' => $data['model'] ?? null,
+            'sn' => $data['sn'] ?? null,
+            'smu' => $data['smu'] ?? null,
+            'unit' => $data['unit'] ?? null,
+            'wo_pr' => $data['wo_pr'] ?? null,
+            'customer' => $data['customer'] ?? null,
+            'inspection_date' => $finalDate,
+
+            'template_key' => $templateKey,
+            'template_version' => $templateVersionInt,
+
+            'parts_payload' => $partsPayload,
+            'detail_payload' => $detailPayload,
+        ]);
+
+        return redirect()->route('seat.edit', $report->id)
+            ->with('success', 'CCR Operator Seat berhasil dibuat.');
     }
 
     // ===========================================================
@@ -139,13 +125,12 @@ class CcrSeatController extends Controller
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
-        $brands = file_exists(resource_path('data/brand_list.php'))
-            ? include resource_path('data/brand_list.php')
-            : [];
+        // Inisialisasi worksheet jika DB masih kosong (Syncing logic)
+        $this->ensureWorksheetInitialized($report);
+        $report->refresh();
 
-        $customers = file_exists(resource_path('data/customer_list.php'))
-            ? include resource_path('data/customer_list.php')
-            : [];
+        $brands = file_exists(resource_path('data/brand_list.php')) ? include resource_path('data/brand_list.php') : [];
+        $customers = file_exists(resource_path('data/customer_list.php')) ? include resource_path('data/customer_list.php') : [];
 
         $groupedCustomers = ['CV' => [], 'PT' => [], 'Other' => []];
         foreach ($customers as $c) {
@@ -154,89 +139,80 @@ class CcrSeatController extends Controller
             else $groupedCustomers['Other'][] = $c;
         }
 
-        return view('seat.edit-seat', compact('report', 'brands', 'groupedCustomers'));
+        $templates = $this->getSeatTemplates();
+
+        return view('seat.edit-seat', compact('report', 'brands', 'groupedCustomers', 'templates'));
     }
 
     // ===========================================================
-    // UPDATE HEADER + ITEM LAMA + ITEM BARU
-    // RULE BARU:
-    // - item LAMA: tetap valid kalau masih ada foto lama tersisa
-    // - kalau deskripsi kosong + semua foto lama dihapus + tidak upload foto baru => ERROR
+    // UPDATE HEADER + PAYLOAD + ITEMS
     // ===========================================================
     public function updateHeader(Request $request, $id)
     {
-        // Load report dulu supaya bisa hitung foto lama tersisa
         $report = CcrReport::with('items.photos')->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
             'group_folder'    => 'required|string',
             'component'       => 'required|string',
-            'make'            => 'nullable|string',
-            'model'           => 'nullable|string',
-            'unit'            => 'nullable|string',
-            'wo_pr'           => 'nullable|string',
-            'customer'        => 'nullable|string',
             'inspection_date' => 'required|date',
 
-            'items'                   => 'nullable|array',
-            'items.*.description'     => 'nullable|string',
-            'items.*.photos'          => 'nullable|array',
-            'items.*.photos.*'        => 'nullable|image|max:8000',
-            'items.*.delete_photos'   => 'nullable|array',
+            'parts_payload'   => 'nullable|string',
+            'detail_payload'  => 'nullable|string',
+
+            'items'                 => 'nullable|array',
+            'items.*.description'   => 'nullable|string',
+            'items.*.photos'        => 'nullable|array',
+            'items.*.photos.*'      => 'nullable|image|max:8000',
+            'items.*.delete_photos' => 'nullable|array',
 
             'new_items'               => 'nullable|array',
             'new_items.*.description' => 'nullable|string',
-            'new_items.*.photos'      => 'nullable|array',
-            'new_items.*.photos.*'    => 'nullable|image|max:8000',
         ]);
 
-        // ✅ validasi “desc atau foto” untuk ITEM LAMA (hitung sisa foto lama)
+        // Logic validasi sisa foto lama (Anti-blank item)
         $validator->after(function ($v) use ($request, $report) {
-
             foreach ((array) $request->input('items', []) as $itemId => $row) {
-
                 $desc = trim((string) ($row['description'] ?? ''));
                 $hasNewUpload = $request->hasFile("items.$itemId.photos");
-
-                // cari item lama di report
                 $itemModel = $report->items->firstWhere('id', (int) $itemId);
                 if (!$itemModel) continue;
 
-                // foto lama yang ada di DB
-                $existingIds = $itemModel->photos->pluck('id')->map(fn($x) => (int) $x)->all();
+                $existingIds = $itemModel->photos->pluck('id')->map(fn ($x) => (int) $x)->all();
+                $toDelete = collect($row['delete_photos'] ?? [])->map(fn ($x) => (int) $x)->all();
+                $remaining = count($existingIds) - count(array_intersect($existingIds, $toDelete));
 
-                // foto yang diminta dihapus dari form
-                $toDelete = collect($row['delete_photos'] ?? [])->map(fn($x) => (int) $x)->all();
-
-                // hitung foto lama yang tersisa setelah delete
-                $deletedCount = count(array_intersect($existingIds, $toDelete));
-                $remainingOldPhotos = max(0, count($existingIds) - $deletedCount);
-
-                // ✅ FAIL kalau:
-                // desc kosong + foto lama sisa 0 + tidak upload foto baru
-                if ($desc === '' && $remainingOldPhotos === 0 && !$hasNewUpload) {
-                    $v->errors()->add("items.$itemId.description", 'Item ini wajib punya deskripsi atau minimal 1 foto.');
+                if ($desc === '' && $remaining === 0 && !$hasNewUpload) {
+                    $v->errors()->add("items.$itemId.description", 'Item Seat wajib memiliki deskripsi atau minimal 1 foto.');
                 }
             }
-
-            // NOTE:
-            // new_items kamu tetap pakai logic "if blank -> continue" (tidak dianggap error).
         });
 
         $data = $validator->validate();
-
         $changed = false;
 
-        // Tanggal + Jam WITA saat edit
-        $finalDate = Carbon::parse($data['inspection_date'])
-            ->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
+        // Jam WITA
+        $finalDate = Carbon::parse($data['inspection_date'])->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
 
-        // ===== Update header hanya kalau berubah =====
+        // Update Payload (Anti-Overwrite)
+        if ($request->filled('parts_payload')) {
+            $rawParts = $this->decodeJsonInput($request->parts_payload);
+            $report->parts_payload = $this->sanitizePartsPayload($rawParts);
+            $changed = true;
+        }
+        if ($request->filled('detail_payload')) {
+            $rawDetail = $this->decodeJsonInput($request->detail_payload);
+            $report->detail_payload = $this->sanitizeDetailPayload($rawDetail);
+            $changed = true;
+        }
+
+        // Update Header
         $report->fill([
             'group_folder'    => $data['group_folder'],
             'component'       => $data['component'],
             'make'            => $request->make,
             'model'           => $request->model,
+            'sn'              => $request->sn,
+            'smu'             => $request->smu,
             'unit'            => $request->unit,
             'wo_pr'           => $request->wo_pr,
             'customer'        => $request->customer,
@@ -248,213 +224,135 @@ class CcrSeatController extends Controller
             $changed = true;
         }
 
-        // Folder Synology (pakai inspection_date final)
-        $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
-        $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
-        $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
-        Storage::disk('public')->makeDirectory("$folder/photos");
+        // Sync Foto Folder
+        $folderDate = Carbon::parse($report->inspection_date)->format('Y-m-d');
+        $safeComp = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
+        $folderPath = "synology/CCR-Seat-{$folderDate}-{$safeComp}";
+        Storage::disk('public')->makeDirectory("$folderPath/photos");
 
-        // ===== UPDATE ITEM LAMA =====
+        // Update Old Items & Photos
         if (!empty($data['items'])) {
             foreach ($data['items'] as $itemId => $input) {
-
-                $item = CcrItem::with('photos')->find($itemId);
-                if (!$item) continue;
-
-                // Update description kalau berubah
-                $item->fill([
-                    'description' => $input['description'] ?? '',
-                ]);
-
-                if ($item->isDirty()) {
-                    $item->save();
-                    $changed = true;
-                }
-
-                // Hapus foto lama
-                if (!empty($input['delete_photos'])) {
-                    foreach ($input['delete_photos'] as $photoId) {
-                        $photo = CcrPhoto::find($photoId);
-                        if ($photo) {
-                            Storage::disk('public')->delete($photo->path);
-                            $photo->delete();
-                            $changed = true;
+                $item = CcrItem::find($itemId);
+                if ($item) {
+                    $item->update(['description' => $input['description'] ?? '']);
+                    if (!empty($input['delete_photos'])) {
+                        foreach ($input['delete_photos'] as $pId) {
+                            $p = CcrPhoto::find($pId);
+                            if ($p) { Storage::disk('public')->delete($p->path); $p->delete(); }
+                        }
+                    }
+                    if ($request->hasFile("items.$itemId.photos")) {
+                        foreach ($request->file("items.$itemId.photos") as $file) {
+                            CcrPhoto::create(['ccr_item_id' => $itemId, 'path' => $file->store("$folderPath/photos", 'public')]);
                         }
                     }
                 }
-
-                // Tambah foto baru
-                if ($request->hasFile("items.$itemId.photos")) {
-                    foreach ($request->file("items.$itemId.photos") as $photo) {
-                        $path = $photo->store("$folder/photos", 'public');
-                        CcrPhoto::create([
-                            'ccr_item_id' => $itemId,
-                            'path'        => $path,
-                        ]);
-                        $changed = true;
-                    }
-                }
             }
         }
 
-        // ===== CREATE ITEM BARU =====
+        // New Items
         if (!empty($data['new_items'])) {
             foreach ($data['new_items'] as $index => $input) {
-
-                $hasDesc  = trim((string)($input['description'] ?? ''));
-                $hasPhoto = $request->hasFile("new_items.$index.photos");
-
-                // blank new item => skip
-                if ($hasDesc === '' && !$hasPhoto) continue;
-
-                $item = CcrItem::create([
-                    'ccr_report_id' => $report->id,
-                    'description'   => $hasDesc ?? '',
-                ]);
-                $changed = true;
-
-                if ($hasPhoto) {
-                    foreach ($request->file("new_items.$index.photos") as $photo) {
-                        $path = $photo->store("$folder/photos", 'public');
-                        CcrPhoto::create([
-                            'ccr_item_id' => $item->id,
-                            'path'        => $path,
-                        ]);
-                        $changed = true;
+                if (empty($input['description']) && !$request->hasFile("new_items.$index.photos")) continue;
+                $item = CcrItem::create(['ccr_report_id' => $report->id, 'description' => $input['description'] ?? '']);
+                if ($request->hasFile("new_items.$index.photos")) {
+                    foreach ($request->file("new_items.$index.photos") as $file) {
+                        CcrPhoto::create(['ccr_item_id' => $item->id, 'path' => $file->store("$folderPath/photos", 'public')]);
                     }
                 }
             }
         }
 
-        // ===== FINAL: kalau ada perubahan apapun, paksa jam report + invalidate docx =====
         if ($changed) {
-            CcrReport::whereKey($report->id)->update([
-                'docx_generated_at' => null,
-                'updated_at'        => now(),
-            ]);
+            $report->update(['docx_generated_at' => null, 'updated_at' => now()]);
         }
 
-        return redirect()->route('ccr.manage.seat')
-            ->with('success', 'Perubahan CCR Operator Seat berhasil disimpan!');
+        return redirect()->route('ccr.manage.seat')->with('success', 'CCR Operator Seat berhasil diperbarui!');
     }
 
     // ===========================================================
-    // DELETE ITEM
+    // AUTOSAVE (AJAX)
     // ===========================================================
-    public function deleteItem(CcrItem $item)
-    {
-        $item->loadMissing(['photos']);
-        $reportId = $item->ccr_report_id;
-
-        foreach ($item->photos as $p) {
-            Storage::disk('public')->delete($p->path);
-            $p->delete();
-        }
-
-        $item->delete();
-
-        // paksa report dianggap berubah + invalidate docx
-        CcrReport::whereKey($reportId)->update([
-            'docx_generated_at' => null,
-            'updated_at'        => now(),
-        ]);
-
-        return redirect()->route('seat.edit', $reportId)
-            ->with('success', 'Item berhasil dihapus.');
-    }
-
-    // ===========================================================
-    // DELETE PHOTO
-    // ===========================================================
-    public function deletePhoto(CcrPhoto $photo)
-    {
-        $photo->loadMissing('item');
-        $reportId = $photo->item->ccr_report_id;
-
-        Storage::disk('public')->delete($photo->path);
-        $photo->delete();
-
-        CcrReport::whereKey($reportId)->update([
-            'docx_generated_at' => null,
-            'updated_at'        => now(),
-        ]);
-
-        return redirect()->route('seat.edit', $reportId)
-            ->with('success', 'Foto berhasil dihapus.');
-    }
-
-    // ===========================================================
-    // DELETE MULTIPLE
-    // ===========================================================
-    public function deleteMultiple(Request $request)
-    {
-        $ids = $request->input('ids', []);
-
-        CcrReport::whereIn('id', $ids)->get()->each(function ($r) {
-            $r->purge_at = now()->addDays(7);
-            $r->save();
-            $r->delete(); // masuk Trash (soft delete)
-        });
-
-        return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
-    }
-
-    // ===========================================================
-    // PREVIEW SEAT
-    // ===========================================================
-    public function preview($id)
-    {
-        $report = CcrReport::with('items.photos')->findOrFail($id);
-        return view('seat.preview', compact('report'));
-    }
-
-    // ===========================================================
-    // SUBMIT TO DIREKTUR (Submit / Re-submit)
-    // ===========================================================
-    public function submit(Request $request, int $id)
+    public function autosaveWorksheet(Request $request, $id)
     {
         $report = CcrReport::findOrFail($id);
+        
+        $hasParts = $request->has('parts_payload');
+        $hasDetail = $request->has('detail_payload');
 
-        $resubmit = $request->boolean('resubmit');
+        $report->parts_payload = $hasParts ? $this->sanitizePartsPayload($this->decodeJsonInput($request->parts_payload)) : $report->parts_payload;
+        $report->detail_payload = $hasDetail ? $this->sanitizeDetailPayload($this->decodeJsonInput($request->detail_payload)) : $report->detail_payload;
 
-        // ✅ blok kalau masih antri / sedang direview
-        if (in_array($report->approval_status, ['waiting', 'in_review'])) {
-            return back()->with('error', 'CCR ini sedang menunggu persetujuan Direktur.');
+        if ($report->isDirty()) {
+            $report->docx_generated_at = null;
+            $report->save();
         }
 
-        // ✅ kalau sudah approved, hanya boleh submit lagi kalau resubmit=1
-        if ($report->approval_status === 'approved' && !$resubmit) {
-            return back()->with('error', 'CCR ini sudah Approved. Gunakan tombol Re-submit jika ingin kirim ulang.');
+        return response()->json(['ok' => true, 'saved_at' => now()->toIso8601String()]);
+    }
+
+    // ===========================================================
+    // TEMPLATE AJAX DEFAULTS
+    // ===========================================================
+    public function templateDefaults(Request $request)
+    {
+        $key = $request->input('template_key', 'seat_blank');
+        $repo = app(SeatTemplateRepo::class);
+        $defaults = $repo->loadDefaults($key);
+
+        return response()->json([
+            'ok' => true,
+            'parts' => $defaults['parts_defaults'] ?? [],
+            'detail' => $defaults['detail_defaults'] ?? [],
+            'datalists' => SeatTemplateRepo::datalists($key)
+        ]);
+    }
+
+    // ===========================================================
+    // HELPERS & SANITIZATION
+    // ===========================================================
+    private function decodeJsonInput($raw): array
+    {
+        if (is_array($raw)) return $raw;
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function sanitizePartsPayload(array $payload): array
+    {
+        // Logic pembersihan angka/money (sama dengan Engine)
+        if (isset($payload['rows'])) {
+            foreach ($payload['rows'] as &$row) {
+                foreach (['sales_price', 'extended_price', 'qty'] as $key) {
+                    if (isset($row[$key])) $row[$key] = preg_replace('/[^\d]/', '', (string)$row[$key]);
+                }
+            }
         }
+        return $payload;
+    }
 
-        // ✅ submit/resubmit -> masuk monitoring direktur
-        $report->approval_status = 'waiting';
-        $report->submitted_by    = auth()->id();
-        $report->submitted_at    = now();
-
-        if ($resubmit) {
-            $report->director_note = null;
+    private function sanitizeDetailPayload(array $payload): array
+    {
+        if (isset($payload['totals']['tax_percent'])) {
+            $payload['totals']['sales_tax_percent'] = $payload['totals']['tax_percent'];
         }
+        return $payload;
+    }
 
-        $report->save();
+    private function getSeatTemplates(): array
+    {
+        return app(SeatTemplateRepo::class)->list();
+    }
 
-        // ✅ nama component untuk title notif (hindari CCR #id)
-        $componentName = trim((string) ($report->component ?? ''));
-        if ($componentName === '') $componentName = 'Seat';
-
-        // ✅ kirim notif ke Director setelah submit
-        $openUrl = route('director.monitoring', ['open' => $report->id], false) . '#r-' . $report->id;
-
-        Inbox::toRoles(['director'], [
-            'type'    => 'seat_submitted',
-            'title'   => $componentName,
-            'message' => 'Disubmit oleh ' . (auth()->user()->name ?? 'User') . '.',
-            'url'     => $openUrl,
-        ], auth()->id());
-
-        return back()->with('success', $resubmit
-            ? 'CCR Seat berhasil di Re-submit ke Direktur.'
-            : 'CCR Seat berhasil dikirim ke Direktur.'
-        );
+    private function ensureWorksheetInitialized($report)
+    {
+        if (empty($report->parts_payload) && $report->template_key) {
+            $defaults = app(SeatTemplateRepo::class)->loadDefaults($report->template_key);
+            $report->update([
+                'parts_payload' => $defaults['parts_defaults'],
+                'detail_payload' => $defaults['detail_defaults']
+            ]);
+        }
     }
 }

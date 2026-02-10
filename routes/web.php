@@ -22,6 +22,7 @@ use App\Http\Controllers\DirectorMonitoringController;
 
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\ExportPartsLabourController;
+use App\Http\Controllers\ItemsMasterController;
 
 
 // ==================================================================
@@ -68,6 +69,10 @@ Route::middleware(['auth'])->group(function () {
     // ✅ PREVIEW + EDIT boleh untuk Operator/Admin/Director
     // ==============================================================
     Route::middleware(['role:operator,admin,director'])->group(function () {
+
+        // Global Items Master (typeahead)
+        Route::get('/ccr/items-master/search', [ItemsMasterController::class, 'search'])
+            ->name('items_master.search');
 
         // ENGINE
         Route::get('/ccr/engine/edit/{id}', [CcrEngineController::class, 'edit'])->name('engine.edit');
@@ -204,18 +209,36 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/monitoring/{id}/reject', [DirectorMonitoringController::class, 'reject'])->name('director.monitoring.reject');
     });
 
-
     // ==================================================================
     // Parts & Labour Worksheet + Detail
+    // (disamakan aksesnya dengan halaman edit/preview: operator/admin/director)
     // ==================================================================
-    Route::get('/engine/{id}/export-parts-labour', [ExportPartsLabourController::class, 'engine'])
-    ->name('engine.export.parts_labour');
+    Route::middleware(['role:operator,admin,director'])->group(function () {
 
+        Route::get('/engine/{id}/export-parts-labour', [ExportPartsLabourController::class, 'engine'])
+            ->name('engine.export.parts_labour');
 
+        // worksheet template (AJAX)
+        Route::get('/engine/worksheet/template/defaults', [CcrEngineController::class, 'templateDefaults'])
+            ->name('engine.worksheet.template.defaults');
 
-    // ==================================================================
-    // worksheet template
-    // ==================================================================
-    Route::post('/engine/{report}/worksheet/template', [CcrEngineController::class, 'applyWorksheetTemplate'])
-    ->name('engine.worksheet.template');
+        // APPLY template (legacy name, BIARKAN supaya yang lama tetap jalan)
+        Route::post('/engine/{report}/worksheet/template', [CcrEngineController::class, 'applyWorksheetTemplate'])
+            ->name('engine.worksheet.template');
+
+        // APPLY template (alias name baru, supaya route('engine.worksheet.template.apply') tidak error)
+        Route::post('/engine/{report}/worksheet/template/apply', [CcrEngineController::class, 'applyWorksheetTemplate'])
+            ->name('engine.worksheet.template.apply');
+
+        // AUTOSAVE Worksheet payload (Parts + Detail)
+        Route::post('/engine/{id}/worksheet/autosave', [CcrEngineController::class, 'autosaveWorksheet'])
+            ->name('engine.worksheet.autosave');
+
+        // AUTOSAVE Worksheet payload (Seat) (Parts + Detail)
+        Route::post('/seat/{id}/worksheet/autosave', [CcrSeatController::class, 'autosaveWorksheet'])
+            ->name('seat.worksheet.autosave');
+    });
+
 });
+
+

@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
+        @auth
+    <script>
+    window.CCR_AUTH_ID = @json(auth()->id());
+    </script>
+    @else
+    <script>
+    window.CCR_AUTH_ID = 0;
+    </script>
+    @endauth
+
     {{-- Alpine JS --}}
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 

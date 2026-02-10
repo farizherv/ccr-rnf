@@ -119,7 +119,9 @@ return [
         'discount_percent'   => '3',
         'discount_amount'    => '4659098',
         'total_before_tax'   => '150644158', // (155.303.256 - 4.659.098)
-        'sales_tax'          => '16570857',  // 11% x total_before_tax (dibulatkan)
-        'total_repair_charge'=> '167215015', // before_tax + sales_tax
+        'tax_percent'        => '11',
+        'sales_tax_percent'  => '11',
+        'sales_tax'          => '16570858', // 11% x total_before_tax (dibulatkan)
+        'total_repair_charge'=> '167215016', // before_tax + sales_tax
     ],
 ];

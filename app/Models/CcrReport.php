@@ -31,6 +31,8 @@ class CcrReport extends Model
         'purge_at',
         'parts_payload',
         'detail_payload',
+        'parts_payload_rev',
+        'detail_payload_rev',
     ];
 
     protected $casts = [
@@ -41,6 +43,9 @@ class CcrReport extends Model
         'template_version' => 'integer',
         'parts_payload' => 'array',
         'detail_payload' => 'array',
+        'parts_payload_rev' => 'integer',
+        'detail_payload_rev' => 'integer',
+        'inspection_date' => 'date',
     ];
 
 

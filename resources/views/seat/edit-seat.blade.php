@@ -26,10 +26,14 @@
       method="POST"
       enctype="multipart/form-data"
       x-data="manageSeat()"
+      x-init="init()"
       @remove-seat-item.window="removeNewItem($event.detail)">
 
     @csrf
     @method('PUT')
+
+    {{-- simpan tab terakhir (biar pas validation error balik ke tab yang sama) --}}
+    <input type="hidden" name="active_tab" x-model="tab">
 
     {{-- =============== HEADER CARD =============== --}}
     <div class="header-card-master">
@@ -45,9 +49,25 @@
         </div>
     </div>
 
+    {{-- =============== TABS =============== --}}
+    <div class="tabbar">
+        <button type="button" class="tabbtn" :class="{ 'active': tab === 'ccr' }" @click="tab='ccr'">
+            CCR SEAT
+        </button>
+        <button type="button" class="tabbtn" :class="{ 'active': tab === 'parts' }" @click="tab='parts'">
+            Parts &amp; Labour Worksheet
+        </button>
+        <button type="button" class="tabbtn" :class="{ 'active': tab === 'detail' }" @click="tab='detail'">
+            Detail
+        </button>
+    </div>
+
     <div class="accent-line"></div>
 
-
+    {{-- =========================================================
+    TAB: CCR (INFO + ITEM)
+    ========================================================== --}}
+    <div x-show="tab === 'ccr'" x-cloak>
 
     {{-- =============== HEADER INFORMATION =============== --}}
     <div class="box">
@@ -269,9 +289,19 @@
 
     </div>
 
+    </div> {{-- end tab: ccr --}}
 
+    {{-- =========================================================
+    TAB: PARTS
+    ========================================================== --}}
+    @include('seat.partials.parts_worksheet')
 
-    {{-- =============== SUBMIT =============== --}}
+    {{-- =========================================================
+    TAB: DETAIL
+    ========================================================== --}}
+    @include('seat.partials.detail_worksheet')
+
+    {{-- =============== SUBMIT (tampil di semua tab) =============== --}}
     <button type="submit"
             class="btn-modern btn-success full-width"
             style="margin-top:8px;">
@@ -359,6 +389,12 @@ function itemEditor(namePrefix, el) {
 
 function manageSeat() {
     return {
+        tab: @json(old('active_tab', 'ccr')),
+
+        init(){
+            if (!this.tab) this.tab = 'ccr';
+        },
+
         newItems: [],
         counter: 0,
 
@@ -410,6 +446,28 @@ function manageSeat() {
         background: #E40505;
         border-radius: 20px;
         margin-bottom: 20px;
+    }
+
+    .tabbar{
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+        margin: 0 0 12px;
+    }
+    .tabbtn{
+        border:1px solid #e5e7eb;
+        background:#ffffff;
+        padding:10px 14px;
+        border-radius:12px;
+        font-weight:700;
+        font-size:13px;
+        cursor:pointer;
+        transition: all 120ms ease;
+    }
+    .tabbtn.active{
+        background:#E40505;
+        border-color:#E40505;
+        color:#ffffff;
     }
 
     .box {

@@ -69,6 +69,75 @@ final class EngineTemplateRepo
             'detail'   => is_array($detail) ? $detail : [],
         ];
     }
+    /**
+     * Load datalists for a template (per-template, versioned).
+     *
+     * No more resources/data/* fallback: source-of-truth is per-template datalists.php.
+     * If a template has no datalists.php, we fallback to engine_blank (if exists).
+     *
+     * Return shape:
+     *  [
+     *    'uom'              => string[],
+     *    'part_description' => string[],
+     *    'part_section'     => string[],
+     *  ]
+     */
+    public static function datalists(string $templateKey): array
+    {
+        $empty = [
+            'uom' => [],
+            'part_description' => [],
+            'part_section' => [],
+        ];
+
+        $tpl = self::loadTemplateDatalists($templateKey);
+        if (is_array($tpl)) return $tpl;
+
+        // fallback: engine_blank
+        if ($templateKey !== 'engine_blank') {
+            $tpl = self::loadTemplateDatalists('engine_blank');
+            if (is_array($tpl)) return $tpl;
+        }
+
+        return $empty;
+    }
+
+    private static function loadTemplateDatalists(string $templateKey): ?array
+    {
+        $m = self::manifest($templateKey);
+        if (!$m || empty($m['_paths']['manifest'])) return null;
+
+        $dir = dirname((string) $m['_paths']['manifest']);
+        $path = $dir . '/datalists.php';
+        if (!is_file($path)) return null;
+
+        $tpl = include $path;
+        if (!is_array($tpl)) return null;
+
+        $out = [
+            'uom' => [],
+            'part_description' => [],
+            'part_section' => [],
+        ];
+
+        foreach (['uom', 'part_description', 'part_section'] as $k) {
+            if (isset($tpl[$k]) && is_array($tpl[$k])) {
+                $vals = [];
+                $seen = [];
+                foreach ($tpl[$k] as $v) {
+                    $s = trim((string) $v);
+                    if ($s === '') continue;
+                    $key = mb_strtolower($s);
+                    if (isset($seen[$key])) continue;
+                    $seen[$key] = true;
+                    $vals[] = $s;
+                }
+                $out[$k] = array_values($vals);
+            }
+        }
+
+        return $out;
+    }
 
     public static function list(): array
     {

@@ -4,7 +4,7 @@ return [
   'key'     => 'engine_4d34t_s64029_cantereuro2',
   'version' => 'v1',
   'name'    => 'Parts & Labour Engine 4D34T-S64029 (Canter Euro 2)',
-  'notes'   => 'Template default 2 sheet: Parts & Labour Worksheet + Detail Worksheet (editable per report; template file tetap aman).',
+  'notes'   => 'Template default Parts & Labour + Detail untuk Engine 4D34T-S64029 Euro 2',
 
   'sheets' => [
     'parts'  => 'Parts & Labour Worksheet',
