@@ -35,6 +35,11 @@
             font-family: Arial, sans-serif;
         }
 
+        /* Anti-FOUC: body hidden until styles parsed */
+        body.fouc-guard {
+            opacity: 0 !important;
+        }
+
         [x-cloak]{ display:none !important; }
 
         /* === Anti FOUC header global === */
@@ -699,7 +704,8 @@
     </style>
 </head>
 
-<body>
+<body class="fouc-guard">
+<script>document.body.classList.remove('fouc-guard');</script>
 
     {{-- TOAST NOTIFICATION (PREMIUM) --}}
     @if(session('success'))
