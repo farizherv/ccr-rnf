@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class NotificationRecipient extends Model
 {
     protected $fillable = [
+        'user_id',
         'email',
         'name',
         'is_active',
@@ -21,6 +23,7 @@ class NotificationRecipient extends Model
     ];
 
     protected $casts = [
+        'user_id' => 'integer',
         'is_active' => 'boolean',
         'notify_waiting' => 'boolean',
         'notify_approved' => 'boolean',
@@ -29,6 +32,11 @@ class NotificationRecipient extends Model
         'created_by' => 'integer',
         'updated_by' => 'integer',
     ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function scopeActive(Builder $query): Builder
     {

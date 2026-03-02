@@ -128,14 +128,16 @@ class InboxAlertDispatcher
     {
         $targets = [];
 
-        $primaryEmail = strtolower(trim((string) $recipient->email));
         $recipientSetting = $this->resolveRecipientSettingForUser($recipient, $status);
-        if ($recipientSetting && $this->isEligibleEmail($primaryEmail)) {
-            $targets[$primaryEmail] = [
-                'email' => $primaryEmail,
-                'target_key' => 'inbox-user:' . (int) $recipient->id,
-                'recipient_id' => (int) $recipientSetting->id,
-            ];
+        if ($recipientSetting) {
+            $recipientEmail = strtolower(trim((string) $recipientSetting->email));
+            if ($this->isEligibleEmail($recipientEmail)) {
+                $targets[$recipientEmail] = [
+                    'email' => $recipientEmail,
+                    'target_key' => 'inbox-user:' . (int) $recipient->id,
+                    'recipient_id' => (int) $recipientSetting->id,
+                ];
+            }
         }
 
         return array_values($targets);
@@ -143,13 +145,26 @@ class InboxAlertDispatcher
 
     private function resolveRecipientSettingForUser(User $recipient, string $status): ?NotificationRecipient
     {
+        // First try by user_id (proper link)
+        $byUserId = NotificationRecipient::query()
+            ->select(['id', 'email', 'user_id', 'is_active', 'notify_waiting', 'notify_approved', 'notify_rejected'])
+            ->where('user_id', (int) $recipient->id)
+            ->active()
+            ->forStatus($status)
+            ->first();
+
+        if ($byUserId) {
+            return $byUserId;
+        }
+
+        // Fallback: match by email for legacy records without user_id
         $email = strtolower(trim((string) $recipient->email));
         if ($email === '') {
             return null;
         }
 
         return NotificationRecipient::query()
-            ->select(['id', 'email', 'is_active', 'notify_waiting', 'notify_approved', 'notify_rejected'])
+            ->select(['id', 'email', 'user_id', 'is_active', 'notify_waiting', 'notify_approved', 'notify_rejected'])
             ->active()
             ->forStatus($status)
             ->whereRaw('LOWER(email) = ?', [$email])

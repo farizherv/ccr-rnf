@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\NotificationRecipient;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class NotificationRecipientController extends Controller
 {
@@ -14,42 +16,63 @@ class NotificationRecipientController extends Controller
     public function index()
     {
         $recipients = NotificationRecipient::query()
+            ->with('user:id,name,role')
             ->orderByDesc('is_active')
             ->orderBy('email')
+            ->get();
+
+        $takenUserIds = $recipients
+            ->pluck('user_id')
+            ->filter(fn ($id) => $id !== null && $id > 0)
+            ->values()
+            ->all();
+
+        $availableUsers = User::query()
+            ->select(['id', 'name', 'username', 'email', 'role'])
+            ->whereNotIn('id', $takenUserIds)
+            ->orderBy('role')
+            ->orderBy('name')
             ->get();
 
         return view('admin.notifications.index', [
             'recipients' => $recipients,
             'maxRecipients' => self::MAX_RECIPIENTS,
+            'availableUsers' => $availableUsers,
         ]);
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
+            'user_id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id'),
+                Rule::unique('notification_recipients', 'user_id'),
+            ],
             'email'    => ['required', 'email', 'max:191'],
-            'name'     => ['nullable', 'string', 'max:120'],
             'notify_waiting' => ['nullable', 'boolean'],
             'notify_approved' => ['nullable', 'boolean'],
             'notify_rejected' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
+        $selectedUser = User::query()->findOrFail((int) $data['user_id']);
         $targetEmail = strtolower(trim($data['email']));
         if ($targetEmail === '') {
             return back()->withInput()->with('error', 'Email tidak boleh kosong.');
         }
 
         $currentCount = NotificationRecipient::query()->count();
-        $alreadyExists = NotificationRecipient::query()
-            ->whereRaw('LOWER(email) = ?', [$targetEmail])
-            ->exists();
-
-        if (!$alreadyExists && $currentCount >= self::MAX_RECIPIENTS) {
+        if ($currentCount >= self::MAX_RECIPIENTS) {
             return back()->withInput()->with('error', 'Batas recipient email tercapai (' . self::MAX_RECIPIENTS . ').');
         }
 
-        if ($alreadyExists) {
+        $emailExists = NotificationRecipient::query()
+            ->whereRaw('LOWER(email) = ?', [$targetEmail])
+            ->exists();
+
+        if ($emailExists) {
             return back()->withInput()->with('error', 'Email ini sudah terdaftar sebagai recipient.');
         }
 
@@ -59,8 +82,9 @@ class NotificationRecipientController extends Controller
         }
 
         NotificationRecipient::query()->create([
+            'user_id' => (int) $selectedUser->id,
             'email' => $targetEmail,
-            'name' => $this->cleanText((string) ($data['name'] ?? ''), 120) ?: null,
+            'name' => $this->cleanText((string) ($selectedUser->name ?? ''), 120) ?: null,
             'notify_waiting' => $waiting,
             'notify_approved' => $approved,
             'notify_rejected' => $rejected,
@@ -71,7 +95,6 @@ class NotificationRecipientController extends Controller
 
         return back()->with('success', 'Recipient email notifikasi berhasil ditambahkan.');
     }
-
 
     public function bulkUpdate(Request $request)
     {
@@ -115,8 +138,6 @@ class NotificationRecipientController extends Controller
                 return back()->with('error', 'Email tidak valid pada salah satu recipient.');
             }
 
-            $targetName = $this->cleanText((string) ($row['name'] ?? ''), 120) ?: null;
-
             $waiting = $this->toBool($row['notify_waiting'] ?? false);
             $approved = $this->toBool($row['notify_approved'] ?? false);
             $rejected = $this->toBool($row['notify_rejected'] ?? false);
@@ -127,7 +148,6 @@ class NotificationRecipientController extends Controller
 
             $prepared[$recipientId] = [
                 'email' => $targetEmail,
-                'name' => $targetName,
                 'notify_waiting' => $waiting,
                 'notify_approved' => $approved,
                 'notify_rejected' => $rejected,
@@ -170,7 +190,6 @@ class NotificationRecipientController extends Controller
 
                 $recipient->fill([
                     'email' => $data['email'],
-                    'name' => $data['name'],
                     'notify_waiting' => $data['notify_waiting'],
                     'notify_approved' => $data['notify_approved'],
                     'notify_rejected' => $data['notify_rejected'],

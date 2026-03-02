@@ -14,7 +14,7 @@ return new class extends Migration
 
         Schema::create('notification_recipients', function (Blueprint $table) {
             $table->id();
-            $table->string('email', 190)->unique();
+            $table->string('email', 190)->nullable()->unique();
             $table->string('name', 120)->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('notify_waiting')->default(true);

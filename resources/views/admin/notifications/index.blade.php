@@ -5,6 +5,7 @@
 @php
     $recipients = $recipients ?? collect();
     $maxRecipients = (int) ($maxRecipients ?? 100);
+    $availableUsers = $availableUsers ?? collect();
     $listEditMode = $errors->any();
 @endphp
 
@@ -31,14 +32,27 @@
 
             <div class="grid">
                 <div class="field">
-                    <label for="addEmail">Email</label>
-                    <input id="addEmail" type="email" name="email" class="input" value="{{ old('email') }}" placeholder="email@example.com" required>
+                    <label for="addUserId">Akun User</label>
+                    <select id="addUserId" name="user_id" class="input js-user-select" data-role-target="addRoleBadge" required>
+                        <option value="">Pilih nama akun user</option>
+                        @foreach($availableUsers as $user)
+                            <option
+                                value="{{ $user->id }}"
+                                data-role="{{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }}"
+                                @selected((string) old('user_id') === (string) $user->id)
+                            >
+                                {{ $user->name }} ({{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }})
+                            </option>
+                        @endforeach
+                    </select>
                 </div>
                 <div class="field">
-                    <label for="addName">Nama (opsional)</label>
-                    <input id="addName" type="text" name="name" class="input" value="{{ old('name') }}" placeholder="Nama penerima">
+                    <label for="addEmail">Email</label>
+                    <input id="addEmail" type="email" name="email" class="input" value="{{ old('email') }}" placeholder="Masukkan email asli penerima" required>
+                    <div class="meta-row">Role: <span id="addRoleBadge" class="role-pill role-empty">-</span></div>
                 </div>
             </div>
+            <p class="hint-text">Pilih akun user lalu masukkan email asli (bukan email @local.test).</p>
 
             <div class="flag-row">
                 <label class="flag"><input type="hidden" name="notify_waiting" value="0"><input id="addNotifyWaiting" type="checkbox" name="notify_waiting" value="1" {{ old('notify_waiting', '1') ? 'checked' : '' }}> Waiting</label>
@@ -78,6 +92,8 @@
                 <div class="rows {{ $listEditMode ? '' : 'is-locked' }}">
                     @foreach($recipients as $recipient)
                         @php
+                            $linkedUser = $recipient->user;
+                            $roleDisplay = $linkedUser ? ($linkedUser->role instanceof \App\Enums\UserRole ? $linkedUser->role->value : (string) $linkedUser->role) : '-';
                             $checkedWaiting = (bool) old('recipients.' . $recipient->id . '.notify_waiting', $recipient->notify_waiting ? 1 : 0);
                             $checkedApproved = (bool) old('recipients.' . $recipient->id . '.notify_approved', $recipient->notify_approved ? 1 : 0);
                             $checkedRejected = (bool) old('recipients.' . $recipient->id . '.notify_rejected', $recipient->notify_rejected ? 1 : 0);
@@ -89,6 +105,13 @@
                                 <input type="hidden" id="delete-flag-{{ $recipient->id }}" name="recipients[{{ $recipient->id }}][_delete]" value="{{ $markedDelete ? 1 : 0 }}">
                                 <div class="grid">
                                     <div class="field">
+                                        <label>Akun User</label>
+                                        <div class="user-display">
+                                            <span class="user-name">{{ $recipient->name ?? '(Tanpa Nama)' }}</span>
+                                            <span class="role-pill {{ $linkedUser ? '' : 'role-empty' }}">{{ strtoupper($roleDisplay) }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="field">
                                         <label for="email-{{ $recipient->id }}">Email</label>
                                         <input
                                             id="email-{{ $recipient->id }}"
@@ -98,18 +121,6 @@
                                             value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) $recipient->email))) }}"
                                             @disabled(!$listEditMode)
                                             required
-                                        >
-                                    </div>
-                                    <div class="field">
-                                        <label for="name-{{ $recipient->id }}">Nama</label>
-                                        <input
-                                            id="name-{{ $recipient->id }}"
-                                            type="text"
-                                            name="recipients[{{ $recipient->id }}][name]"
-                                            class="input"
-                                            value="{{ old('recipients.' . $recipient->id . '.name', (string) ($recipient->name ?? '')) }}"
-                                            @disabled(!$listEditMode)
-                                            placeholder="Nama penerima"
                                         >
                                     </div>
                                 </div>
@@ -186,51 +197,46 @@
     margin:0 0 10px;font-size:14px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#0f1b3a;
 }
 [data-page="notification-recipients"] .list-head{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    margin-bottom:10px;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;
 }
-[data-page="notification-recipients"] .list-head .section-title{
-    margin:0;
-}
+[data-page="notification-recipients"] .list-head .section-title{ margin:0; }
 [data-page="notification-recipients"] .btn-toggle-edit{
-    border:1px solid #9fb3cf;
-    background:#fff;
-    color:#1e293b;
-    min-height:40px;
-    padding:0 14px;
-    border-radius:10px;
-    font-size:14px;
-    font-weight:900;
-    cursor:pointer;
-    transition:.16s ease;
+    border:1px solid #9fb3cf;background:#fff;color:#1e293b;min-height:40px;padding:0 14px;
+    border-radius:10px;font-size:14px;font-weight:900;cursor:pointer;transition:.16s ease;
 }
-[data-page="notification-recipients"] .btn-toggle-edit:hover{
-    border-color:#6f8fb8;
-    background:#f2f7ff;
-}
-[data-page="notification-recipients"] .btn-toggle-edit:disabled{
-    opacity:.75;
-    cursor:not-allowed;
-}
+[data-page="notification-recipients"] .btn-toggle-edit:hover{ border-color:#6f8fb8;background:#f2f7ff; }
+[data-page="notification-recipients"] .btn-toggle-edit:disabled{ opacity:.75;cursor:not-allowed; }
 [data-page="notification-recipients"] .btn-toggle-edit.is-active{
-    background:#1f2937;
-    border-color:#1f2937;
-    color:#fff;
+    background:#1f2937;border-color:#1f2937;color:#fff;
 }
 [data-page="notification-recipients"] .grid{
-    display:grid;grid-template-columns:1fr 1fr;gap:12px;
+    display:grid;grid-template-columns:1.2fr 1fr;gap:12px;
 }
 [data-page="notification-recipients"] .field{ display:flex;flex-direction:column;gap:7px;min-width:0; }
 [data-page="notification-recipients"] .field label{ font-size:13px;font-weight:900;color:#1f2937; }
+[data-page="notification-recipients"] .user-display{
+    display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 12px;
+    border-radius:12px;border:1px solid #cfd9e8;background:#eef2f7;
+    font-size:15px;color:#1e293b;font-weight:700;
+}
+[data-page="notification-recipients"] .user-name{ flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+[data-page="notification-recipients"] .meta-row{
+    margin-top:2px;color:#64748b;font-size:12px;font-weight:800;display:flex;align-items:center;gap:8px;
+}
+[data-page="notification-recipients"] .role-pill{
+    display:inline-flex;align-items:center;justify-content:center;border-radius:999px;
+    border:1px solid #cfd9e8;background:#fff;padding:3px 9px;font-size:11px;font-weight:900;color:#334155;
+}
+[data-page="notification-recipients"] .role-empty{ color:#94a3b8; }
 [data-page="notification-recipients"] .input{
     width:100%;min-height:44px;border-radius:12px;border:1px solid #cfd9e8;background:#fff;padding:10px 12px;
     font-size:15px;color:#0f172a;outline:none;
 }
 [data-page="notification-recipients"] .input:focus{
     border-color:#2f65d8;box-shadow:0 0 0 3px rgba(47,101,216,.15);
+}
+[data-page="notification-recipients"] .hint-text{
+    margin:10px 0 0;color:#64748b;font-size:12px;font-weight:700;
 }
 [data-page="notification-recipients"] .flag-row{
     display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;
@@ -251,8 +257,7 @@
     background:#ef4444;box-shadow:0 10px 20px rgba(239,68,68,.24);
 }
 [data-page="notification-recipients"] .btn-delete.is-undo{
-    background:#475569;
-    box-shadow:0 10px 20px rgba(71,85,105,.22);
+    background:#475569;box-shadow:0 10px 20px rgba(71,85,105,.22);
 }
 [data-page="notification-recipients"] .rows{ display:flex;flex-direction:column;gap:12px; }
 [data-page="notification-recipients"] .row-item{
@@ -260,59 +265,30 @@
     display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;
 }
 [data-page="notification-recipients"] .row-item.is-marked-delete{
-    border-color:#f2b4b4;
-    background:#fff5f5;
+    border-color:#f2b4b4;background:#fff5f5;
 }
-[data-page="notification-recipients"] .row-form{
-    min-width:0;
-}
+[data-page="notification-recipients"] .row-form{ min-width:0; }
 [data-page="notification-recipients"] .row-delete-wrap{
-    display:flex;
-    align-items:flex-end;
-    justify-content:flex-end;
+    display:flex;align-items:flex-end;justify-content:flex-end;
 }
-[data-page="notification-recipients"] .rows.is-locked{
-    opacity:.92;
-}
+[data-page="notification-recipients"] .rows.is-locked{ opacity:.92; }
 [data-page="notification-recipients"] .rows.is-locked .row-item{
-    cursor:not-allowed;
-    background:#f8fafc;
+    cursor:not-allowed;background:#f8fafc;
 }
-[data-page="notification-recipients"] .rows.is-locked .row-item *{
-    cursor:not-allowed !important;
-}
-[data-page="notification-recipients"] .rows.is-locked .flag{
-    opacity:.72;
-}
+[data-page="notification-recipients"] .rows.is-locked .row-item *{ cursor:not-allowed !important; }
+[data-page="notification-recipients"] .rows.is-locked .flag{ opacity:.72; }
 [data-page="notification-recipients"] .delete-state{
-    margin-top:10px;
-    border:1px solid #f3c3c3;
-    border-radius:10px;
-    background:#fff0f0;
-    color:#b42318;
-    font-size:12px;
-    font-weight:800;
-    padding:8px 10px;
+    margin-top:10px;border:1px solid #f3c3c3;border-radius:10px;background:#fff0f0;
+    color:#b42318;font-size:12px;font-weight:800;padding:8px 10px;
 }
-[data-page="notification-recipients"] .delete-state.is-hidden{
-    display:none;
-}
+[data-page="notification-recipients"] .delete-state.is-hidden{ display:none; }
 [data-page="notification-recipients"] .input:disabled{
-    background:#eef2f7;
-    color:#64748b;
-    border-color:#d3dce9;
+    background:#eef2f7;color:#64748b;border-color:#d3dce9;
 }
 [data-page="notification-recipients"] .btn-delete:disabled{
-    background:#e88d8d;
-    box-shadow:none;
-    color:#fff;
-    opacity:.90;
-    transform:none;
-    cursor:not-allowed;
+    background:#e88d8d;box-shadow:none;color:#fff;opacity:.90;transform:none;cursor:not-allowed;
 }
-[data-page="notification-recipients"] .btn-delete:disabled:hover{
-    background:#e88d8d;
-}
+[data-page="notification-recipients"] .btn-delete:disabled:hover{ background:#e88d8d; }
 [data-page="notification-recipients"] .empty-state{
     margin:0;padding:16px;border:1px dashed #cfd9e8;border-radius:12px;background:#fff;color:#5f6e8a;font-weight:700;
 }
@@ -327,12 +303,30 @@
     const page = document.querySelector('[data-page="notification-recipients"]');
     if (!page) return;
 
+    /* === Add form: role badge from dropdown === */
+    const addUserSelect = document.getElementById('addUserId');
+    const addRoleBadge = document.getElementById('addRoleBadge');
+
+    const updateAddRoleBadge = () => {
+        if (!addUserSelect || !addRoleBadge) return;
+        const selected = addUserSelect.options[addUserSelect.selectedIndex];
+        const role = selected ? (selected.dataset.role || '') : '';
+        addRoleBadge.textContent = role || '-';
+        addRoleBadge.classList.toggle('role-empty', !role);
+    };
+
+    if (addUserSelect) {
+        updateAddRoleBadge();
+        addUserSelect.addEventListener('change', updateAddRoleBadge);
+    }
+
+    /* === List: edit mode toggle + delete === */
     const listBox = page.querySelector('.list-box');
     const toggleRecipientsEditBtn = page.querySelector('#toggleRecipientsEdit');
     const listRows = listBox ? listBox.querySelector('.rows') : null;
     const bulkUpdateForm = document.getElementById('bulkUpdateRecipientsForm');
     const editableNodes = listBox
-        ? Array.from(listBox.querySelectorAll('.row-item input[type="checkbox"], .row-item input[type="email"], .row-item input[type="text"], .row-item .btn-delete'))
+        ? Array.from(listBox.querySelectorAll('.row-item input[type="checkbox"], .row-item input[type="email"], .row-item .btn-delete'))
         : [];
     const markDeleteButtons = listBox
         ? Array.from(listBox.querySelectorAll('.js-mark-delete'))

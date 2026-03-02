@@ -10,19 +10,17 @@ class UserObserver
 {
     public function created(User $user): void
     {
-        $email = $this->normalizeEmail($user->email);
-        if ($email === '') {
-            return;
-        }
-
         $defaults = NotificationRecipientDefaults::flagsForRole($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role);
         $actorId = $this->actorId();
 
+        // Create recipient linked by user_id with null email.
+        // Admin must fill in the real email on the website.
         NotificationRecipient::query()->firstOrCreate(
-            ['email' => $email],
+            ['user_id' => (int) $user->id],
             [
+                'email' => null,
                 'name' => $this->cleanName((string) $user->name),
-                'is_active' => true,
+                'is_active' => false,
                 'notify_waiting' => $defaults['notify_waiting'],
                 'notify_approved' => $defaults['notify_approved'],
                 'notify_rejected' => $defaults['notify_rejected'],
@@ -34,40 +32,27 @@ class UserObserver
 
     public function updated(User $user): void
     {
-        if (!$user->wasChanged(['email', 'name', 'role'])) {
+        if (!$user->wasChanged(['name', 'role'])) {
             return;
         }
 
-        $newEmail = $this->normalizeEmail($user->email);
-        if ($newEmail === '') {
-            return;
-        }
-
-        $oldEmail = $this->normalizeEmail((string) $user->getOriginal('email'));
-
-        $recipient = null;
-        if ($oldEmail !== '' && $oldEmail !== $newEmail) {
-            $recipient = NotificationRecipient::query()
-                ->whereRaw('LOWER(email) = ?', [$oldEmail])
-                ->first();
-        }
+        // Find by user_id (proper link)
+        $recipient = NotificationRecipient::query()
+            ->where('user_id', (int) $user->id)
+            ->first();
 
         if (!$recipient) {
-            $recipient = NotificationRecipient::query()
-                ->whereRaw('LOWER(email) = ?', [$newEmail])
-                ->first();
-        }
-
-        if (!$recipient) {
+            // If no recipient linked yet, create one (inactive, no email)
             $this->created($user);
             return;
         }
 
         $updates = [
-            'email' => $newEmail,
             'name' => $this->cleanName((string) $user->name),
             'updated_by' => $this->actorId(),
         ];
+
+        // Do NOT overwrite the manually-set email
 
         if ($user->wasChanged('role')) {
             $origRole = $user->getOriginal('role');
@@ -86,11 +71,6 @@ class UserObserver
 
         $recipient->fill($updates);
         $recipient->save();
-    }
-
-    private function normalizeEmail(?string $email): string
-    {
-        return strtolower(trim((string) $email));
     }
 
     private function cleanName(string $name): string
@@ -113,4 +93,3 @@ class UserObserver
         return is_numeric($id) ? (int) $id : null;
     }
 }
-
