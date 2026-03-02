@@ -66,6 +66,20 @@
                 </div>
 
                 <div class="field field-span-2">
+                    <label class="label" for="emailInput">Email</label>
+                    <input
+                        id="emailInput"
+                        class="input"
+                        type="email"
+                        name="email"
+                        value="{{ old('email', $user->email) }}"
+                        placeholder="email@example.com"
+                        required
+                    >
+                    <div class="hint">Email ini digunakan untuk notifikasi CCR (waiting, approved, rejected).</div>
+                </div>
+
+                <div class="field field-span-2">
                     <label class="label" for="passwordInput">Password Baru</label>
                     <input
                         id="passwordInput"

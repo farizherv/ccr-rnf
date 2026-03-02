@@ -26,7 +26,7 @@ class UserManagementController extends Controller
     public function store(Request $request)
     {
         // Admin tidak boleh bikin director
-        if (auth()->user()->role === UserRole::Admin && $request->role === 'director') {
+        if (auth()->user()->role === 'admin' && $request->role === 'director') {
             abort(403);
         }
 
@@ -59,7 +59,7 @@ class UserManagementController extends Controller
 
     public function edit(User $user)
     {
-        if (auth()->user()->role === UserRole::Admin && $user->role === UserRole::Director) {
+        if (auth()->user()->role === 'admin' && $user->role === 'director') {
             abort(403);
         }
 
@@ -68,25 +68,23 @@ class UserManagementController extends Controller
 
     public function update(Request $request, User $user)
     {
-        if (auth()->user()->role === UserRole::Admin) {
-            if ($user->role === UserRole::Director) abort(403);
+        if (auth()->user()->role === 'admin') {
+            if ($user->role === 'director') abort(403);
             if ($request->role === 'director') abort(403);
         }
 
         $data = $request->validate([
             'name'     => ['required','string','max:120'],
             'username' => ['required','string','max:60', Rule::unique('users','username')->ignore($user->id)],
+            'email'    => ['required','email','max:191', Rule::unique('users','email')->ignore($user->id)],
             'role'     => ['required', Rule::in(UserRole::values())],
             'password' => ['nullable','string','min:8','max:255','regex:/[A-Z]/','regex:/[0-9]/'],
         ]);
 
         $user->name = $data['name'];
         $user->username = $data['username'];
+        $user->email = strtolower(trim($data['email']));
         $user->role = $data['role'];
-
-        $safe = preg_replace('/[^a-zA-Z0-9]/', '_', $data['username']);
-        $hash = substr(md5($data['username']), 0, 8);
-        $user->email = strtolower($safe) . '.' . $hash . '@local.test';
 
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
@@ -100,7 +98,7 @@ class UserManagementController extends Controller
     public function destroy(User $user)
     {   
     // hanya admin yang boleh hapus (kalau kamu punya role system)
-    if (auth()->user()->role !== UserRole::Admin) {
+    if (auth()->user()->role !== 'admin') {
         return back()->with('error', 'Anda tidak punya akses untuk menghapus user.');
     }
 
@@ -110,7 +108,7 @@ class UserManagementController extends Controller
     }
 
     // tidak boleh hapus admin terakhir
-    $isAdmin = ($user->role === UserRole::Admin);
+    $isAdmin = ($user->role === 'admin');
     if ($isAdmin) {
         $adminCount = User::where('role', 'admin')->count();
         if ($adminCount <= 1) {
