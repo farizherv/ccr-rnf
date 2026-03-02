@@ -3,7 +3,7 @@
    Handles: PWA install, push notifications, offline fallback
    ============================================================ */
 
-const CACHE_NAME = 'ccr-rnf-v1';
+const CACHE_NAME = 'ccr-rnf-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Pre-cache essentials on install
@@ -26,14 +26,16 @@ self.addEventListener('activate', (event) => {
             Promise.all(
                 keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
             )
-        ).then(() => self.clients.claim())
+        )
+        // Note: NOT calling self.clients.claim() to avoid FOUC on page refresh
     );
 });
 
-// Network-first strategy with offline fallback
+// Offline fallback — only for failed navigation requests
 self.addEventListener('fetch', (event) => {
-    // Only handle GET requests for navigation
+    // Only handle navigation GET requests (HTML pages)
     if (event.request.mode !== 'navigate') return;
+    if (event.request.method !== 'GET') return;
 
     event.respondWith(
         fetch(event.request)
