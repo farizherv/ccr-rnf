@@ -64,7 +64,7 @@
 
         <form method="POST" action="{{ route('logout') }}">
             @csrf
-            <button class="drop-item" type="submit">Logout</button>
+            <button class="drop-item" type="submit">LOG OUT</button>
         </form>
     </div>
 </div>
@@ -77,8 +77,18 @@
 .drop-head{padding:12px 14px;border-bottom:1px solid #eef2f7}
 .drop-head .name{font-weight:1000}
 .drop-head .role{font-weight:900;color:#6b7280;font-size:12px;margin-top:2px}
-.drop-item{width:100%;text-align:left;border:none;background:#fff;padding:12px 14px;font-weight:1000;cursor:pointer}
-.drop-item:hover{background:#f8fafc}
+.drop-item{
+    width:100%;
+    text-align:center;
+    border:none;
+    background:#0b1733;
+    color:#fff;
+    padding:12px 14px;
+    font-weight:1000;
+    cursor:pointer;
+    transition:background .18s ease,color .18s ease;
+}
+.drop-item:hover{background:#E40505;color:#fff}
 [x-cloak]{display:none!important}
 
 /* ===================== NOTIF PANEL ===================== */
@@ -188,17 +198,35 @@
 
     // ✅ PASTI KENA: ambil Approved/Rejected di awal kalimat
     function buildMsg(raw) {
-        const esc = escapeHtml(raw || '');
-        const m = esc.match(/^\s*(Approved|Rejected)\b\s*(.*)$/i);
-        if (!m) return esc;
+        const plain = String(raw ?? '').trim();
+        if (!plain) return '-';
 
-        const statusWord = m[1];
-        const rest = m[2] ? (' ' + m[2]) : '';
-        const cls = /^approved$/i.test(statusWord)
-            ? 'notif-pill notif-pill-approved'
-            : 'notif-pill notif-pill-rejected';
+        const m = plain.match(/^\s*(Approved|Rejected)\s+oleh\s+(.+?)\s*(?:\.?\s*Catatan:\s*(.*))?\s*$/iu);
+        if (m) {
+            const statusWord = /^approved$/i.test(m[1]) ? 'Approved' : 'Rejected';
+            const actor = escapeHtml((m[2] || '').trim());
+            const cls = /^approved$/i.test(statusWord)
+                ? 'notif-pill notif-pill-approved'
+                : 'notif-pill notif-pill-rejected';
 
-        return `<span class="${cls}">${statusWord}</span>${rest}`;
+            return `<span class="${cls}">${statusWord}</span><span style="color:#6b7280;font-weight:700;font-size:13px;letter-spacing:0;">Submitted by ${actor}</span>`;
+        }
+
+        const submitBy = plain.match(/^\s*(?:di)?submit(?:ted)?\s+(?:by|oleh)\s+(.+?)\.?\s*$/iu);
+        if (submitBy) {
+            const actor = escapeHtml((submitBy[1] || '').trim().replace(/\.$/, ''));
+            return `<span style="color:#6b7280;font-weight:700;font-size:13px;letter-spacing:0;">Submitted by ${actor}</span>`;
+        }
+
+        const normalized = plain
+            .replace(/^\s*disubmit\s+oleh\s+/iu, 'Submitted by ')
+            .replace(/^\s*submit(?:ted)?\s+oleh\s+/iu, 'Submitted by ')
+            .replace(/^\s*disubmit\s+by\s+/iu, 'Submitted by ')
+            .replace(/^\s*submit(?:ted)?\s+by\s+/iu, 'Submitted by ')
+            .replace(/\boleh\b/iu, 'By');
+        const esc = escapeHtml(normalized).replace(/\bApproved\b/gi, '<span class="notif-pill notif-pill-approved">Approved</span>')
+            .replace(/\bRejected\b/gi, '<span class="notif-pill notif-pill-rejected">Rejected</span>');
+        return esc;
     }
 
     function renderItems(items) {

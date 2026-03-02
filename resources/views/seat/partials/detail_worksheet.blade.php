@@ -9,6 +9,7 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
   // =========================================================
   $reportObj = $report ?? null;
   $reportId  = $reportObj?->id;
+  $initialPayloadRev = $reportObj ? max(0, (int) ($reportObj->detail_payload_rev ?? 0)) : 0;
 
   $payload = $reportObj ? ($reportObj->detail_payload ?? []) : [];
 
@@ -16,6 +17,13 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
   if (is_string($payload)) {
     $decoded = json_decode($payload, true);
     if (is_array($decoded)) $payload = $decoded;
+  }
+  $draftSeedDetailPayload = (isset($draftSeedDetailPayload) && is_array($draftSeedDetailPayload))
+    ? $draftSeedDetailPayload
+    : [];
+  $skipLocalDraftLoad = isset($skipLocalDraftLoad) ? (bool) $skipLocalDraftLoad : false;
+  if (!$reportObj && empty($payload) && !empty($draftSeedDetailPayload)) {
+    $payload = $draftSeedDetailPayload;
   }
   if (!is_array($payload)) $payload = [];
 
@@ -45,15 +53,14 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
   $initialTemplateKey = $meta['template_key'] ?? ($reportObj->template_key ?? 'seat_blank');
 
   $uomList = $uomList ?? [];
-
-  // seat: gunakan global uom_list.php (tidak tergantung EngineTemplateRepo)
-  if (!is_array($uomList) || !count($uomList)) {
-    $uomPath = resource_path('data/uom_list.php');
-    if (file_exists($uomPath)) {
-      $uomList = include $uomPath;
+  try {
+    $__dl = \App\Support\WorksheetTemplates\SeatTemplateRepo::datalists($initialTemplateKey);
+    if (is_array($__dl) && isset($__dl['uom']) && is_array($__dl['uom'])) {
+      $uomList = $__dl['uom'];
     }
+  } catch (\Throwable $e) {
+    // ignore
   }
-
   if (!is_array($uomList)) $uomList = [];
 
   if (!is_array($meta))         $meta = [];
@@ -108,18 +115,22 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
   // =========================================================
   $userId = auth()->check() ? (int) auth()->id() : 0;
 
-  $storageKey  = 'ccr_seat_detail_ws_'
+  $storageKey  = 'ccr_detail_ws_'
                . ($userId ? ('u'.$userId.'_') : 'guest_')
                . ($reportId ? ('r'.$reportId) : 'create')
                . '_' . md5(url()->current());
 
   $autosaveUrl = $reportId ? route('seat.worksheet.autosave', ['id' => $reportId]) : null;
+
+  // ✅ Policy parity with seat: editable in create/edit flow
+  $readOnly = false;
 @endphp
 
 
 <div x-show="tab==='detail'" x-cloak
      x-data="seatDetailWS({
         dbHasPayload: @js($dbHasPayload),
+        readOnly: @js($readOnly),
 
         initialMeta: @js($meta),
         initialMainRows: @js($mainRows),
@@ -129,12 +140,14 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
         initialTotals: @js($totals),
 
         storageKey: @js($storageKey),
+        skipLocalDraftLoad: @js($skipLocalDraftLoad),
         reportId: @js($reportId),
+        initialPayloadRev: @js($initialPayloadRev),
         autosaveUrl: @js($autosaveUrl),
         csrf: @js(csrf_token()),
      })"
      class="box dw-shell"
-     :class="isFs ? 'dw-shell--fs' : ''"
+     :class="(isFs ? 'dw-shell--fs' : '') + (readOnly ? ' dw-readonly' : '')"
      @keydown.capture="onKey($event)">
 
 
@@ -143,16 +156,51 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
       <option value="{{ $opt }}"></option>
     @endforeach
   </datalist>
-  <h3 style="margin-bottom:6px;">Detail Worksheet (Seat)</h3>
-  <p style="font-size:13px; color:#64748b; margin-bottom:14px;">
-    Template “Sheet Detail (Seat)” (Autosave). Formula dasar aktif; 
+
+  <h3 x-show="!isFs" x-cloak style="margin-bottom:6px;">Detail Worksheet</h3>
+  <p x-show="!isFs" x-cloak style="font-size:13px; color:#64748b; margin-bottom:14px;">
+    Template “Sheet Detail” (Autosave). Formula dasar aktif;
   </p>
 
-  {{-- TOP BAR: autosave + zoom --}}
+  {{-- ✅ read-only banner --}}
+  <div x-show="readOnly"
+       style="margin:0 0 12px;color:#b45309;background:#fffbeb;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;font-size:13px;">
+    Role <b>Operator</b> hanya bisa melihat (read-only).
+  </div>
+
+  {{-- TOP BAR: autosave + actions + zoom --}}
   <div class="dw-topbar">
     <div class="dw-topbar__left">
       <span class="dw-badge" x-text="saveStatus"></span>
-      <span class="dw-small">AutoSave ON</span>
+      <span class="dw-small" x-text="readOnly ? 'Read-only' : 'AutoSave ON'"></span>
+
+      <span class="dw-divider">|</span>
+
+      <button type="button"
+              class="dw-btn dw-btn--primary"
+              @click="addRow()"
+              :disabled="readOnly">
+        + Tambah Baris
+      </button>
+
+      <button type="button"
+              class="dw-btn dw-btn--danger"
+              @click="deleteLastRow()"
+              :disabled="readOnly">
+        Hapus Terakhir
+      </button>
+
+      <div class="dw-target">
+        <span class="dw-target__label">Target</span>
+        <select class="dw-select" x-model="rowTarget" :disabled="readOnly">
+          <option value="main">COMPONENT</option>
+          <option value="painting">PAINTING</option>
+          <option value="external">External Services</option>
+        </select>
+      </div>
+
+      <span class="dw-divider">|</span>
+      <div class="dw-cellinfo">Cell: <b x-text="cellLabel()"></b></div>
     </div>
 
     <div class="dw-topbar__right">
@@ -166,38 +214,6 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
       <button type="button" class="dw-pct" @click="zoomReset()">
         <span x-text="zoom + '%'"></span>
       </button>
-    </div>
-  </div>
-
-  {{-- ACTIONS --}}
-  <div class="dw-actions">
-    <button type="button" class="dw-btn dw-btn--primary" @click="addRow()">
-      + Tambah Baris
-    </button>
-
-    <button type="button" class="dw-btn dw-btn--danger" @click="deleteLastRow()">
-      Hapus Terakhir
-    </button>
-
-    <div class="dw-target">
-      <span class="dw-target__label">Target</span>
-      <select class="dw-select" x-model="rowTarget">
-        <option value="main">COMPONENT</option>
-        <option value="painting">PAINTING</option>
-        <option value="external">External Services</option>
-      </select>
-    </div>
-
-    <div class="dw-tip">
-      Enter → kanan • Tab/Shift+Tab → kanan/kiri • Arrow ↑↓←→ → pindah cell (khusus area MAIN)
-    </div>
-  </div>
-
-  <div class="dw-subbar">
-    <div class="dw-subbar__left">
-      <div class="dw-cellinfo">
-        Cell: <b x-text="cellLabel()"></b>
-      </div>
     </div>
   </div>
 
@@ -612,10 +628,7 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
                   </div>
                 </td>
 
-                
-
                 <td colspan="2" class="dw-empty"></td>
-
 
                 <td>
                   <div class="dw-money" x-show="i === 0">
@@ -666,15 +679,11 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
                   </div>
                 </td>
 
-                
-
                 <td colspan="2">
                   <input type="text" class="dw-inp dw-bold"
                          x-model="e.remark"
-
                          @input="onChanged()">
                 </td>
-
 
                 <td>
                   <div class="dw-money" x-show="i === 0">
@@ -863,10 +872,25 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
   </div>
 
   {{-- hidden JSON payload --}}
-  <input type="hidden" name="detail_payload" :value="jsonPayload()">
+  <input type="hidden" name="detail_payload" x-ref="detailPayloadInput" :value="jsonPayload()">
+  <input type="hidden" name="detail_payload_rev" x-ref="detailPayloadRevInput" :value="payloadRev">
 </div>
 
 <style>
+  /* ===== READONLY ===== */
+  .dw-btn[disabled], .dw-select[disabled]{
+    opacity:.55;
+    cursor:not-allowed;
+  }
+  .dw-readonly .dw-inp,
+  .dw-readonly .dw-consumableinp,
+  .dw-readonly .dw-percentinp{
+    color:#475569 !important;
+  }
+  .dw-readonly .dw-inp:focus{
+    box-shadow:none !important;
+  }
+
   /* ===== SHELL + FULLSCREEN ===== */
   .dw-shell{position:relative;}
   .dw-engine{ color:#0b0b0b !important; }
@@ -1105,11 +1129,14 @@ File: resources/views/seat/partials/detail_worksheet.blade.php
 <script>
 document.addEventListener('alpine:init', () => {
   Alpine.data('seatDetailWS', (cfg) => ({
-    storageKey: cfg.storageKey || ('ccr_seat_detail_ws_' + window.location.pathname),
+    storageKey: cfg.storageKey || ('ccr_detail_ws_' + window.location.pathname),
+    skipLocalDraftLoad: !!cfg.skipLocalDraftLoad,
     reportId: cfg.reportId || null,
+    payloadRev: Number(cfg.initialPayloadRev || 0),
     autosaveUrl: cfg.autosaveUrl || '',
     csrf: cfg.csrf || (document.querySelector('meta[name=csrf-token]')?.content || ''),
     dbHasPayload: !!cfg.dbHasPayload,
+    readOnly: !!cfg.readOnly,
 
     _saveSeq: 0,
 
@@ -1155,11 +1182,6 @@ document.addEventListener('alpine:init', () => {
     _partsSyncEvents: [
       'ccr:seatPartsTotals',
       'ccr:seatPartsTotalsChanged',
-      'ccr:seatPartsFootersChanged',
-      'ccr:seatPartsWorksheetTotals',
-
-      'ccr:enginePartsTotals',
-      'ccr:enginePartsTotalsChanged',
       'ccr:partsFootersChanged',
       'ccr:partsFooterExtendedChanged',
       'ccr:partsTotalsChanged',
@@ -1192,6 +1214,22 @@ document.addEventListener('alpine:init', () => {
       } catch (e) {}
     },
 
+    // ✅ apply readonly attributes (Operator)
+    applyReadOnlyDom(){
+      if (!this.readOnly) return;
+      try {
+        const root = this.$el;
+        const nodes = root.querySelectorAll('input, textarea, select');
+        nodes.forEach((el) => {
+          const tag = (el.tagName || '').toLowerCase();
+          const type = (el.getAttribute('type') || '').toLowerCase();
+          if (type === 'hidden' || type === 'range') return;
+          if (tag === 'select') { el.disabled = true; return; }
+          el.readOnly = true;
+        });
+      } catch(e) {}
+    },
+
     init() {
       const seed = {
         meta: (cfg.initialMeta && typeof cfg.initialMeta === 'object') ? cfg.initialMeta : {},
@@ -1202,7 +1240,7 @@ document.addEventListener('alpine:init', () => {
         totals: (cfg.initialTotals && typeof cfg.initialTotals === 'object') ? cfg.initialTotals : {},
       };
 
-      const d = this.loadDraft();
+      const d = this.skipLocalDraftLoad ? null : this.loadDraft();
       const canUseDraft = (d && typeof d === 'object') && (
         (d.meta && typeof d.meta === 'object') ||
         (Array.isArray(d.main_rows) && d.main_rows.length) ||
@@ -1247,9 +1285,7 @@ document.addEventListener('alpine:init', () => {
         this.saveStatus = 'Auto-saved ' + this.formatTime(new Date());
       }
 
-      // ✅ default model
       if (!this.meta || typeof this.meta !== 'object') this.meta = {};
-      if (!this.meta.model) this.meta.model = 'ENGINE';
 
       // compat: template lama pakai sales_tax_percent
       if (this.totals && (this.totals.tax_percent === undefined || this.totals.tax_percent === null || this.totals.tax_percent === '') && this.totals.sales_tax_percent !== undefined) {
@@ -1273,16 +1309,33 @@ document.addEventListener('alpine:init', () => {
       this.$nextTick(() => {
         this.applyZoom();
         this.focusCell(0, 1);
+        this.applyReadOnlyDom();
+        this.writePayloadInput();
+        if (this.readOnly) this.saveStatus = 'Read-only';
       });
 
-      // autosave local on unload
-      this._onBeforeUnload = () => this.saveDraft(true);
+      // autosave local on unload (skip kalau readOnly)
+      this._onBeforeUnload = () => {
+        if (this.readOnly) return;
+        this.saveDraft(true);
+      };
       window.addEventListener('beforeunload', this._onBeforeUnload);
+
+      this._onForceSave = () => {
+        this.flushPendingSave(true);
+      };
+      window.addEventListener('ccr:seat-force-save', this._onForceSave);
 
       this.bindClearOnSubmit();
 
+      if (!this.reportId) {
+        this._createCollectDetailPayload = () => this.flushPendingSave(true);
+        window.__seatCreateCollectDetailPayload = this._createCollectDetailPayload;
+      }
+
       // listen template apply dari Parts Worksheet (langsung update Detail)
       this._onTemplateApplied = (ev) => {
+        if (this.readOnly) return;
         const d = (ev && ev.detail && typeof ev.detail === 'object') ? ev.detail : {};
         const payload = d.detailPayload || d.detail || d.payload || null;
         if (!payload || typeof payload !== 'object') return;
@@ -1301,7 +1354,6 @@ document.addEventListener('alpine:init', () => {
         this.applyTemplateDetail(payload, { replace: rep });
       };
       window.addEventListener('ccr:seatTemplateApplied', this._onTemplateApplied);
-      window.addEventListener('ccr:engineTemplateApplied', this._onTemplateApplied);
 
       // ✅ Sync dari Parts Worksheet (subtotal parts/labour/hours)
       this._onPartsSync = (ev) => {
@@ -1311,19 +1363,20 @@ document.addEventListener('alpine:init', () => {
       this._partsSyncEvents.forEach(name => window.addEventListener(name, this._onPartsSync));
     },
 
-
     // Alpine cleanup kalau komponen dihancurkan (aman)
     destroy() {
       try {
-        // ✅ restore body scroll kalau komponen hilang saat fullscreen
         if (this.isFs) {
           document.body.style.overflow = this._bodyOverflow ?? '';
         }
 
         if (this._onBeforeUnload) window.removeEventListener('beforeunload', this._onBeforeUnload);
+        if (this._onForceSave) window.removeEventListener('ccr:seat-force-save', this._onForceSave);
         if (this._onTemplateApplied) window.removeEventListener('ccr:seatTemplateApplied', this._onTemplateApplied);
-        if (this._onTemplateApplied) window.removeEventListener('ccr:engineTemplateApplied', this._onTemplateApplied);
         if (this._onPartsSync) this._partsSyncEvents.forEach(name => window.removeEventListener(name, this._onPartsSync));
+        if (window.__seatCreateCollectDetailPayload === this._createCollectDetailPayload) {
+          delete window.__seatCreateCollectDetailPayload;
+        }
       } catch(e) {}
     },
 
@@ -1334,6 +1387,7 @@ document.addEventListener('alpine:init', () => {
       form.__detailWsClearBound = true;
 
       form.addEventListener('submit', () => {
+        this.flushPendingSave(true);
         try { localStorage.removeItem(this.storageKey); } catch(e) {}
       });
     },
@@ -1395,8 +1449,6 @@ document.addEventListener('alpine:init', () => {
 
       this.rowTarget = 'main';
 
-      if (!this.meta.model) this.meta.model = 'ENGINE';
-
       if (this.totals && (this.totals.tax_percent === undefined || this.totals.tax_percent === null || this.totals.tax_percent === '') && this.totals.sales_tax_percent !== undefined) {
         this.totals.tax_percent = this.totals.sales_tax_percent;
       }
@@ -1411,12 +1463,12 @@ document.addEventListener('alpine:init', () => {
       }
       this._labourDefault = this.toInt(this.meta.sub_total_labour_default);
 
-
       this.recalcAll();
       this.onChanged();
 
       this.$nextTick(() => {
         try { this.focusCell(this.mainBase, 0); } catch(e) {}
+        this.applyReadOnlyDom();
       });
     },
 
@@ -1470,11 +1522,11 @@ document.addEventListener('alpine:init', () => {
 
       this.$nextTick(() => {
         this.applyZoom();
-        // balik ke cell aktif biar enak lanjut input
         this.focusCell(this.activeRow, this.activeCol);
       });
     },
 
+    // ✅ single applyZoom (no duplicates)
     applyZoom() {
       const z = this.clamp(Number(this.zoom || 100), 70, 150);
       this.zoom = z;
@@ -1485,18 +1537,14 @@ document.addEventListener('alpine:init', () => {
       const scale = z / 100;
 
       try {
-        // Prefer CSS zoom (Chrome/Edge) biar ukuran scroll area ikut mengecil/membesar
         if ('zoom' in target.style) {
-          target.style.zoom = String(scale);
+          target.style.zoom = `${z}%`;
           target.style.transform = '';
           target.style.width = '';
         } else {
-          // Fallback (misal Firefox): pakai transform
           target.style.zoom = '';
           target.style.transformOrigin = '0 0';
           target.style.transform = `scale(${scale})`;
-
-          // kompensasi layout biar scroll area nggak “kebesaran” waktu scale kecil
           target.style.width = (100 / scale) + '%';
         }
       } catch (e) {}
@@ -1506,30 +1554,22 @@ document.addEventListener('alpine:init', () => {
     zoomOut(){ this.zoom = Math.max(70,  Number(this.zoom || 100) - 5); this.applyZoom(); },
     zoomReset(){ this.zoom = 75; this.applyZoom(); },
 
-    applyZoom() {
-      const z = Math.max(70, Math.min(150, Number(this.zoom || 100)));
-      this.zoom = z;
-      const target = this.$refs.zoomTarget;
-      if (!target) return;
-      // lebih stabil daripada 0.7,5
-      target.style.zoom = `${z}%`;    },
-    zoomIn(){ this.zoom = Math.min(150, this.zoom + 5); this.applyZoom(); },
-    zoomOut(){ this.zoom = Math.max(70, this.zoom - 5); this.applyZoom(); },
-    zoomReset(){ this.zoom = 75; this.applyZoom(); },
-
     /* ===== Row tools ===== */
     addRow(){
+      if (this.readOnly) return;
       if (this.rowTarget === 'painting') return this.addPaintingRow();
       if (this.rowTarget === 'external') return this.addExternalRow();
       return this.addMainRow();
     },
     deleteLastRow(){
+      if (this.readOnly) return;
       if (this.rowTarget === 'painting') return this.deleteLastPaintingRow();
       if (this.rowTarget === 'external') return this.deleteLastExternalRow();
       return this.deleteLastMainRow();
     },
 
     addMainRow(){
+      if (this.readOnly) return;
       this.mainRows.push(this.makeMainRow({}));
       this.onChanged();
       this.$nextTick(() => {
@@ -1538,26 +1578,31 @@ document.addEventListener('alpine:init', () => {
       });
     },
     deleteLastMainRow(){
+      if (this.readOnly) return;
       if (this.mainRows.length <= 1) return;
       this.mainRows.pop();
       this.onChanged();
     },
 
     addPaintingRow(){
+      if (this.readOnly) return;
       this.paintingRows.push(this.makePaintRow({}));
       this.onChanged();
     },
     deleteLastPaintingRow(){
+      if (this.readOnly) return;
       if (this.paintingRows.length <= 1) return;
       this.paintingRows.pop();
       this.onChanged();
     },
 
     addExternalRow(){
+      if (this.readOnly) return;
       this.externalRows.push(this.makeExtRow({}));
       this.onChanged();
     },
     deleteLastExternalRow(){
+      if (this.readOnly) return;
       if (this.externalRows.length <= 1) return;
       this.externalRows.pop();
       this.onChanged();
@@ -1669,14 +1714,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     onKey(e){
-      // ✅ ESC selalu keluar fullscreen (tidak tergantung fokus di dw-cell)
       if (e.key === 'Escape' && this.isFs) {
         e.preventDefault();
         this.toggleFullscreen();
         return;
       }
 
-      // ✅ Ctrl/⌘ + + / - / 0 untuk zoom
       if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) {
         e.preventDefault();
         this.zoomIn();
@@ -1696,7 +1739,6 @@ document.addEventListener('alpine:init', () => {
       const ae = document.activeElement;
       if (!ae || !this.$el.contains(ae)) return;
 
-      // navigasi grid hanya untuk input yang punya class dw-cell
       if (!(ae.classList && ae.classList.contains('dw-cell'))) return;
 
       if (e.key === 'Enter') { e.preventDefault(); return this.moveRight(); }
@@ -1709,20 +1751,59 @@ document.addEventListener('alpine:init', () => {
     },
 
     /* ===== autosave Local + DB ===== */
+    flushPendingSave(force = false) {
+      if (this.readOnly) return;
+      clearTimeout(this._tSave);
+      const payload = this.payloadObject();
+      payload.ts = Date.now();
+      this.writePayloadInput(payload);
+      this.saveDraft(true, payload);
+      this.emitCreateDraft(payload);
+      if (force || this.reportId) {
+        this.saveRemote(true, payload);
+      }
+    },
+
     onChanged() {
       this.recalcAll();
+
+      // ✅ Operator = no saving
+      if (this.readOnly) {
+        this.saveStatus = 'Read-only';
+        return;
+      }
+
+      // Keep hidden input in sync immediately so form submit never misses latest values.
+      this.writePayloadInput();
 
       clearTimeout(this._tSave);
       this.saveStatus = 'Saving...';
       this._tSave = setTimeout(() => {
         const payload = this.payloadObject();
         payload.ts = Date.now();
+        this.writePayloadInput(payload);
         this.saveDraft(true, payload);
         this.saveRemote(true, payload);
+        this.emitCreateDraft(payload);
       }, 900);
     },
 
+    emitCreateDraft(payload = null) {
+      if (this.reportId) return;
+      const p = payload && typeof payload === 'object' ? payload : this.payloadObject();
+      try {
+        window.dispatchEvent(new CustomEvent('ccr:create-draft-section', {
+          detail: {
+            type: 'engine',
+            section: 'detail',
+            payload: p,
+          },
+        }));
+      } catch (e) {}
+    },
+
     saveDraft(isAuto = false, payload = null) {
+      if (this.readOnly) return;
       const p = payload || this.payloadObject();
       if (!p) return;
 
@@ -1736,6 +1817,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async saveRemote(isAuto = true, payload = null) {
+      if (this.readOnly) return;
       if (!this.reportId || !this.autosaveUrl) return;
 
       const seq = ++this._saveSeq;
@@ -1750,12 +1832,23 @@ document.addEventListener('alpine:init', () => {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': this.csrf,
           },
-          body: JSON.stringify({ detail_payload: p }),
+          body: JSON.stringify({
+            detail_payload: p,
+            detail_payload_rev: Number(this.payloadRev || 0),
+          }),
         });
 
         if (seq !== this._saveSeq) return;
 
         if (!res.ok) throw new Error('autosave http ' + res.status);
+        const json = await res.json().catch(() => ({}));
+        if (json && typeof json === 'object' && Number.isFinite(Number(json.detail_payload_rev))) {
+          this.payloadRev = Number(json.detail_payload_rev || 0);
+        }
+        if (json && json.stale && json.stale.detail) {
+          this.saveStatus = 'AutoSave stale skipped (Detail)';
+          return;
+        }
         this.saveStatus = (isAuto ? 'Auto-saved (DB)' : 'Saved (DB)') + ' ' + new Date().toLocaleTimeString();
       } catch (e) {
         console.warn('saveRemote failed', e);
@@ -1793,16 +1886,16 @@ document.addEventListener('alpine:init', () => {
     },
 
     onSubTotalLabourInput(ev){
+      if (this.readOnly) return;
+
       const raw = (ev && ev.target) ? String(ev.target.value ?? '') : '';
       const trimmed = raw.trim();
 
-      // total labour tambahan dari row-row
       let sumRows = 0;
       for (const r of (this.mainRows || [])) {
         sumRows += this.toInt(r.labour_charge);
       }
 
-      // jika dihapus sampai kosong => balik ke default template
       if (trimmed === '') {
         const def = this.toInt(this.meta.sub_total_labour_default);
         this.meta.sub_total_labour_base = String(def);
@@ -1815,8 +1908,6 @@ document.addEventListener('alpine:init', () => {
       const digits = this.onlyDigits(raw);
       const total = (digits === '') ? 0 : parseInt(digits, 10);
 
-      // interpret input footer sebagai TOTAL yang diinginkan,
-      // lalu base disesuaikan: base = total - tambahanRow
       const base = Math.max(0, total - sumRows);
       this.meta.sub_total_labour_base = String(base);
       this.meta.sub_total_labour = String(total);
@@ -1824,7 +1915,6 @@ document.addEventListener('alpine:init', () => {
       if (ev && ev.target) ev.target.value = this.formatDots(this.meta.sub_total_labour);
       this.onChanged();
     },
-
 
     // ===== FORMULA HELPERS =====
     toInt(v){
@@ -1836,17 +1926,14 @@ document.addEventListener('alpine:init', () => {
       return Math.max(min, Math.min(max, n));
     },
 
-    // ✅ hanya 1 parseHours (yang benar)
     parseHours(v){
       v = String(v || '').trim();
       if (!v) return 0;
 
       const hasComma = v.includes(',');
       if (hasComma) {
-        // 1.234,56 -> 1234.56
         v = v.replace(/\./g, '').replace(',', '.');
       } else {
-        // 1,234.56 or 1.5 -> 1234.56 / 1.5
         v = v.replace(/,/g, '');
       }
 
@@ -1865,20 +1952,17 @@ document.addEventListener('alpine:init', () => {
       this._recalcLock = true;
 
       try {
-        // 1) MAIN: Sub Total HOURS
         let sumHours = 0;
         for (const r of (this.mainRows || [])) {
           sumHours += this.parseHours(r.hours);
         }
         this.meta.sub_total_hours = this.formatHours(sumHours);
 
-        // 2) MAIN: Sub Total LABOUR (base template + tambahan row)
         let sumLabourRows = 0;
         for (const r of (this.mainRows || [])) {
           sumLabourRows += this.toInt(r.labour_charge);
         }
 
-        // base default per template (Euro 2 / Euro 4 beda)
         const baseDefault = this.toInt(this.meta.sub_total_labour_default);
         const baseCurrent = (this.meta.sub_total_labour_base !== undefined && this.meta.sub_total_labour_base !== null && String(this.meta.sub_total_labour_base) !== '')
           ? this.toInt(this.meta.sub_total_labour_base)
@@ -1887,7 +1971,6 @@ document.addEventListener('alpine:init', () => {
         const labourSubtotal = baseCurrent + sumLabourRows;
         this.meta.sub_total_labour = String(labourSubtotal);
 
-        // 3) MAIN: Parts subtotal (kalau user isi per-row, sum; kalau tidak, biarkan meta.sub_total_parts)
         let sumPartsMain = 0;
         for (const r of (this.mainRows || [])) {
           sumPartsMain += this.toInt(r.parts_charge);
@@ -1897,7 +1980,6 @@ document.addEventListener('alpine:init', () => {
           this.meta.sub_total_parts = String(sumPartsMain);
         }
 
-        // 4) PAINTING: total per row = qty * unit_price, dan subtotal painting
         let paintTotal = 0;
         for (const p of (this.paintingRows || [])) {
           const qty = this.toInt(p.qty);
@@ -1908,20 +1990,17 @@ document.addEventListener('alpine:init', () => {
         }
         this.misc.painting_total = String(paintTotal);
 
-        // 5) EXTERNAL: subtotal external
         let extTotal = 0;
         for (const e of (this.externalRows || [])) {
           extTotal += this.toInt(e.amount);
         }
         this.misc.external_total = String(extTotal);
 
-        // 6) CONSUMABLE: consumable_charge = percent * (Sub Total Labour)
         const consPct = this.clamp(this.toInt(this.misc.consumable_percent), 0, 100);
         this.misc.consumable_percent = String(consPct);
         const consCharge = Math.round(labourSubtotal * (consPct / 100));
         this.misc.consumable_charge = String(consCharge);
 
-        // 7) TOTALS
         const totalLabour = labourSubtotal;
         const totalParts  = this.toInt(this.meta.sub_total_parts);
         const totalMisc   = consCharge + paintTotal + extTotal;
@@ -1932,27 +2011,23 @@ document.addEventListener('alpine:init', () => {
 
         const totalBeforeDisc = totalLabour + totalParts + totalMisc;
         this.totals.total_before_disc = String(totalBeforeDisc);
-        // 8) DISCOUNT amount (Excel-like: pakai raw float, rounding hanya di output)
+
         const discPct = this.clamp(this.toInt(this.totals.discount_percent), 0, 100);
         this.totals.discount_percent = String(discPct);
         const discRaw = totalBeforeDisc * (discPct / 100);
         this.totals.discount_amount = String(Math.round(discRaw));
 
-        // 9) TOTAL BEFORE TAX (raw)
         const beforeTaxRaw = Math.max(0, totalBeforeDisc - discRaw);
         this.totals.total_before_tax = String(Math.round(beforeTaxRaw));
 
-        // 10) SALES TAX (raw)
         const taxPct = this.clamp(this.toInt(this.totals.tax_percent), 0, 100);
         this.totals.tax_percent = String(taxPct);
         const salesTaxRaw = beforeTaxRaw * (taxPct / 100);
         this.totals.sales_tax = String(Math.round(salesTaxRaw));
 
-        // 11) TOTAL REPAIR CHARGE (raw)
         const totalRepairRaw = beforeTaxRaw + salesTaxRaw;
         this.totals.total_repair_charge = String(Math.round(totalRepairRaw));
       } finally {
-        // ✅ lock selalu dibuka
         this._recalcLock = false;
       }
     },
@@ -1985,6 +2060,13 @@ document.addEventListener('alpine:init', () => {
         misc: this.misc || {},
         totals: this.totals || {},
       };
+    },
+
+    writePayloadInput(payload = null){
+      const input = this.$refs.detailPayloadInput;
+      if (!input) return;
+      const p = (payload && typeof payload === 'object') ? payload : this.payloadObject();
+      input.value = JSON.stringify(p);
     },
 
     jsonPayload(){

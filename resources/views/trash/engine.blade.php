@@ -1,426 +1,929 @@
 @extends('layout')
 @section('content')
 
-<div class="trash-page" data-page="trash-engine">
+<div data-page="trash-engine">
 
-  <a href="{{ route('trash.menu') }}" class="btn-back">← Kembali ke MENU Trash & Restore</a>
-
-  <div class="header-card">
-    <div class="header-left">
-      <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
-      <div>
-        <h1 class="header-title">TRASH & RESTORE – ENGINE</h1>
-        <p class="header-subtitle">Restore atau hapus permanen data CCR Engine.</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="accent-line-dark"></div>
-
-  {{-- ======================= FILTER BOX (LIVE) ======================= --}}
-  <div class="box">
-    <h3 style="margin-bottom:18px;">Daftar CCR Engine (Trash)</h3>
-
-    <div class="filter-row">
-      {{-- SEARCH --}}
-      <div class="filter-group filter-large">
-        <label for="trashSearch">Cari</label>
-        <input id="trashSearch" type="text" class="input"
-               placeholder="Cari component, customer, make, model, SN...">
-      </div>
-
-      {{-- FILTER CUSTOMER --}}
-      <div class="filter-group filter-small">
-        <label for="trashCustomer">Filter Customer</label>
-        <select id="trashCustomer" class="input">
-          <option value="">Semua customer</option>
-          @foreach($customers as $c)
-            <option value="{{ $c }}">{{ $c }}</option>
-          @endforeach
-        </select>
-      </div>
-
-      {{-- SORT --}}
-      <div class="filter-group filter-small">
-        <label for="trashSort">Sort By</label>
-        <select id="trashSort" class="input">
-          <option value="newest">Newest</option>
-          <option value="oldest">Oldest</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  {{-- ======================= BULK + LIST (SATU SCOPE) ======================= --}}
-  <div
-      x-data="trashEngineBulk()"
-      x-init="window.__trashEngineSyncSelectAll = () => syncSelectAll();"
-  >
-
-    {{-- ✅ BULK BAR: RESTORE + HAPUS PERMANEN --}}
-    <div x-show="selectedReports.length > 0" x-cloak class="bulk-bar">
-
-      {{-- BULK RESTORE --}}
-      <form action="{{ route('trash.engine.restoreMultiple') }}" method="POST" class="bulk-form">
-        @csrf
-        <template x-for="id in selectedReports" :key="'re-'+id">
-          <input type="hidden" name="ids[]" :value="id">
-        </template>
-
-        <button type="submit" class="btn-bulk bulk-restore">
-          ♻️ Restore Terpilih (<span x-text="selectedReports.length"></span>)
-        </button>
-      </form>
-
-      {{-- BULK FORCE DELETE --}}
-      <form action="{{ route('trash.engine.forceMultiple') }}" method="POST" class="bulk-form"
-            onsubmit="return confirm('Hapus permanen semua yang terpilih? Foto & item akan ikut terhapus.')">
-        @csrf
-        @method('DELETE')
-
-        <template x-for="id in selectedReports" :key="'del-'+id">
-          <input type="hidden" name="ids[]" :value="id">
-        </template>
-
-        <button type="submit" class="btn-bulk bulk-delete">
-          🗑️ Hapus Permanen Terpilih (<span x-text="selectedReports.length"></span>)
-        </button>
-      </form>
-
+    <div class="top-toolbar">
+        <a href="{{ route('trash.menu') }}" class="btn-back">← Kembali ke MENU Trash & Restore</a>
     </div>
 
-    {{-- ======================= LIST ======================= --}}
-    <div class="box" id="trashList" x-ref="list">
-
-      {{-- ✅ SELECT ALL --}}
-      <div class="select-all-row">
-        <input
-          id="selectAllTrashEngine"
-          type="checkbox"
-          x-ref="selectAll"
-          class="select-checkbox select-all-checkbox"
-          @change="toggleSelectAll($event)"
-        >
-        <label for="selectAllTrashEngine" class="select-all-label">Select All</label>
-      </div>
-
-      <div class="divider"></div>
-
-      {{-- Empty message (akan di-hide/show oleh JS) --}}
-      <p id="trashEmpty" class="empty-text" style="display:none;">Trash Engine masih kosong.</p>
-
-      @foreach($reports as $r)
-        <div class="report-card"
-             data-id="{{ $r->id }}"
-             data-search="{{ strtolower(($r->component ?? '').' '.($r->customer ?? '').' '.($r->make ?? '').' '.($r->model ?? '').' '.($r->sn ?? '')) }}"
-             data-customer="{{ $r->customer ?? '' }}"
-             data-deleted="{{ optional($r->deleted_at)->format('Y-m-d H:i:s') }}">
-
-          <div class="report-left">
-            <input type="checkbox"
-                   class="select-checkbox row-checkbox"
-                   @change="toggleOne({{ $r->id }}, $event)">
-
-            <div class="report-main">
-              <div class="report-title"><strong>{{ $r->component ?? '-' }}</strong></div>
-              <div class="report-meta">
-                <span>Customer: <b>{{ $r->customer ?? '-' }}</b></span>
-                <span>Make: <b>{{ $r->make ?? '-' }}</b></span>
-                <span>Model: <b>{{ $r->model ?? '-' }}</b></span>
-                <span>SN: <b>{{ $r->sn ?? '-' }}</b></span>
-                <span>Dihapus: <b>{{ optional($r->deleted_at)->format('Y-m-d H:i') }}</b></span>
-              </div>
+    <div class="header-card">
+        <div class="header-left">
+            <img src="{{ asset('rnf-logo.png') }}" class="header-logo" width="110" height="110" alt="RNF Logo">
+            <div>
+                <h1 class="header-title">TRASH & RESTORE - ENGINE</h1>
+                <p class="header-subtitle">Restore atau hapus permanen data CCR Engine.</p>
             </div>
-          </div>
-
-          <div class="report-actions">
-            <form action="{{ route('trash.engine.restore', $r->id) }}" method="POST">
-              @csrf
-              <button class="btn-premium restore-btn" type="submit">♻️ Restore</button>
-            </form>
-
-            <form action="{{ route('trash.engine.force', $r->id) }}" method="POST"
-                  onsubmit="return confirm('Hapus permanen? Foto & item akan ikut terhapus.')">
-              @csrf
-              @method('DELETE')
-              <button class="btn-premium delete-btn" type="submit">🗑️ Hapus Permanen</button>
-            </form>
-          </div>
-
         </div>
-      @endforeach
     </div>
 
-  </div>
+    <div class="accent-line"></div>
 
+    @php
+        $customers = collect($customers ?? [])->filter()->values();
+        $now = now();
+        $purgeSoonCutoff = $now->copy()->addDay();
+        $totalReports = $reports->count();
+        $purgeSoonReports = $reports->filter(fn($row) => $row->purge_at && $row->purge_at->lte($purgeSoonCutoff))->count();
+        $expiredReports = $reports->filter(fn($row) => $row->purge_at && $row->purge_at->lt($now))->count();
+        $pageVisibleReports = $reports->count();
+    @endphp
 
-  {{-- ======================= SCRIPT (FILTER + SORT + EMPTY + SYNC SELECTALL) ======================= --}}
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const page = document.querySelector('[data-page="trash-engine"]');
-      if (!page) return;
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total Trash</div>
+            <div class="stat-value">{{ $totalReports }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Purge &lt; 24 Jam</div>
+            <div class="stat-value">{{ $purgeSoonReports }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Lewat Batas</div>
+            <div class="stat-value">{{ $expiredReports }}</div>
+        </div>
+    </div>
 
-      const searchInput = page.querySelector("#trashSearch");
-      const customerSel = page.querySelector("#trashCustomer");
-      const sortSel     = page.querySelector("#trashSort");
-      const list        = page.querySelector("#trashList");
-      const emptyMsg    = page.querySelector("#trashEmpty");
+    <div class="box filter-box">
+        <h3 class="section-title">Daftar CCR Engine (Trash)</h3>
 
-      const cards = () => Array.from(list.querySelectorAll(".report-card"));
+        <div class="filter-row">
+            <div class="filter-group filter-large">
+                <label for="trashSearch">Cari</label>
+                <input id="trashSearch" type="text" class="input search-input"
+                       placeholder="Cari component, customer, make, model, SN...">
+            </div>
 
-      const toTime = (val) => {
-        if (!val) return 0;
-        const safe = String(val).trim().replace(" ", "T");
-        const t = Date.parse(safe);
-        return isNaN(t) ? 0 : t;
-      };
+            <div class="filter-group filter-small">
+                <label for="trashCustomer">Filter Customer</label>
+                <select id="trashCustomer" class="input">
+                    <option value="">Semua customer</option>
+                    @foreach($customers as $c)
+                        <option value="{{ $c }}">{{ $c }}</option>
+                    @endforeach
+                </select>
+            </div>
 
-      function updateEmptyState() {
-        const visibleCount = cards().filter(c => c.style.display !== "none").length;
-        emptyMsg.style.display = (visibleCount === 0) ? "block" : "none";
-      }
+            <div class="filter-group filter-small">
+                <label for="trashSort">Sort By</label>
+                <select id="trashSort" class="input">
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                </select>
+            </div>
+        </div>
+    </div>
 
-      function applyFilters() {
-        const q = (searchInput.value || "").toLowerCase().trim();
-        const c = (customerSel.value || "").trim();
+    <div
+        x-data="trashEngineBulk()"
+        x-init="window.__trashEngineSyncSelectAll = () => syncSelectAll();"
+    >
+        <div x-show="selectedReports.length > 0" x-cloak class="bulk-bar">
+            <form action="{{ route('trash.engine.restoreMultiple') }}" method="POST" class="bulk-form">
+                @csrf
+                <template x-for="id in selectedReports" :key="'re-'+id">
+                    <input type="hidden" name="ids[]" :value="id">
+                </template>
 
-        cards().forEach(card => {
-          const search = (card.dataset.search || "");
-          const cust   = (card.dataset.customer || "").trim();
+                <button type="submit" class="bulk-btn bulk-btn-restore">
+                    ♻ Restore Terpilih (<span x-text="selectedReports.length"></span>)
+                </button>
+            </form>
 
-          let show = true;
-          if (q && !search.includes(q)) show = false;
-          if (c && cust !== c) show = false;
+            <form action="{{ route('trash.engine.forceMultiple') }}" method="POST" class="bulk-form"
+                  onsubmit="return confirm('Hapus permanen semua yang terpilih? Foto & item akan ikut terhapus.')">
+                @csrf
+                @method('DELETE')
 
-          card.style.display = show ? "flex" : "none";
-        });
+                <template x-for="id in selectedReports" :key="'del-'+id">
+                    <input type="hidden" name="ids[]" :value="id">
+                </template>
 
-        updateEmptyState();
+                <button type="submit" class="bulk-btn bulk-btn-danger">
+                    🗑 Hapus Permanen (<span x-text="selectedReports.length"></span>)
+                </button>
+            </form>
+        </div>
 
-        // ✅ sync selectAll state setelah filter
-        if (window.__trashEngineSyncSelectAll) window.__trashEngineSyncSelectAll();
-      }
+        <div class="box report-list-box">
+            <div class="list-head">
+                <div class="list-head-title">List Laporan</div>
+                <div class="list-head-tools">
+                    <a href="{{ route('ccr.manage.engine') }}" class="btn-list-create">Buka Manage Engine</a>
+                    <div class="list-head-count">
+                        <span id="resultCountTrashEngine" class="count-number">{{ $pageVisibleReports }}</span>
+                        <span class="count-text">data tampil</span>
+                    </div>
+                </div>
+            </div>
 
-      function applySort() {
-        const mode = sortSel.value;
+            <div class="select-all-row">
+                <input
+                    id="selectAllTrashEngine"
+                    type="checkbox"
+                    x-ref="selectAll"
+                    class="select-checkbox select-all-checkbox"
+                    @change="toggleSelectAll($event)"
+                >
+                <label for="selectAllTrashEngine" class="select-all-label"><b>Select All</b></label>
+            </div>
 
-        const sorted = [...cards()].sort((a, b) => {
-          const da = toTime(a.dataset.deleted);
-          const db = toTime(b.dataset.deleted);
-          if (mode === "newest") return db - da;
-          if (mode === "oldest") return da - db;
-          return 0;
-        });
+            <div class="select-divider"></div>
 
-        sorted.forEach(card => list.appendChild(card));
-        applyFilters();
-      }
+            <div id="trashCards" x-ref="list">
+                @forelse($reports as $r)
+                    <div class="report-card"
+                         data-id="{{ $r->id }}"
+                         data-search="{{ strtolower(($r->component ?? '').' '.($r->customer ?? '').' '.($r->make ?? '').' '.($r->model ?? '').' '.($r->sn ?? '')) }}"
+                         data-customer="{{ $r->customer ?? '' }}"
+                         data-deleted="{{ optional($r->deleted_at)->format('Y-m-d H:i:s') }}">
 
-      searchInput.addEventListener("input", applyFilters);
-      customerSel.addEventListener("change", applyFilters);
-      sortSel.addEventListener("change", applySort);
+                        <div class="report-left">
+                            <input type="checkbox"
+                                   class="select-checkbox row-checkbox"
+                                   @change="toggleOne({{ $r->id }}, $event)">
 
-      // init
-      applySort();
-    });
+                            <div class="report-main">
+                                <div class="report-title">
+                                    <strong>{{ $r->component ?? '-' }}</strong>
+                                </div>
+                                <div class="report-meta">
+                                    <span>Customer: <b>{{ $r->customer ?? '-' }}</b></span>
+                                    <span>Make: <b>{{ $r->make ?? '-' }}</b></span>
+                                    <span>Model: <b>{{ $r->model ?? '-' }}</b></span>
+                                    <span>SN: <b>{{ $r->sn ?? '-' }}</b></span>
+                                    <span>Dihapus: <b>{{ optional($r->deleted_at)->format('Y-m-d H:i') }}</b></span>
+                                    <span>Purge At: <b>{{ optional($r->purge_at)->format('Y-m-d H:i') ?? '-' }}</b></span>
+                                </div>
+                            </div>
+                        </div>
 
-    // ✅ Alpine bulk
-    function trashEngineBulk(){
-      return {
-        selectedReports: [],
-        _bulkSync: false,
+                    </div>
+                @empty
+                @endforelse
+            </div>
 
-        toggleOne(id, evt){
-          const cb = evt.target;
-          const card = cb.closest('.report-card');
+            <p id="trashEmpty" class="empty-state" style="display:none;">Trash Engine masih kosong.</p>
+        </div>
+    </div>
 
-          if (cb.checked) {
-            if (!this.selectedReports.includes(id)) this.selectedReports.push(id);
-            card.classList.add('selected');
-          } else {
-            this.selectedReports = this.selectedReports.filter(x => x !== id);
-            card.classList.remove('selected');
-          }
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const page = document.querySelector('[data-page="trash-engine"]');
+            if (!page) return;
 
-          if (!this._bulkSync) this.syncSelectAll();
-        },
+            const searchInput = page.querySelector("#trashSearch");
+            const customerSel = page.querySelector("#trashCustomer");
+            const sortSel = page.querySelector("#trashSort");
+            const list = page.querySelector("#trashCards");
+            const emptyMsg = page.querySelector("#trashEmpty");
+            const countEl = page.querySelector("#resultCountTrashEngine");
 
-        toggleSelectAll(evt){
-          const checked = evt.target.checked;
+            if (!searchInput || !customerSel || !sortSel || !list || !emptyMsg || !countEl) return;
 
-          const visibleCards = Array.from(this.$refs.list.querySelectorAll('.report-card'))
-            .filter(card => card.style.display !== 'none');
+            const cards = () => Array.from(list.querySelectorAll(".report-card"));
 
-          this._bulkSync = true;
+            const toTime = (val) => {
+                if (!val) return 0;
+                const safe = String(val).trim().replace(" ", "T");
+                const t = Date.parse(safe);
+                return Number.isNaN(t) ? 0 : t;
+            };
 
-          visibleCards.forEach(card => {
-            const id = Number(card.dataset.id || 0);
-            const cb = card.querySelector('input.row-checkbox');
-            if (!cb || !id) return;
-
-            cb.checked = checked;
-
-            if (checked) {
-              if (!this.selectedReports.includes(id)) this.selectedReports.push(id);
-              card.classList.add('selected');
-            } else {
-              this.selectedReports = this.selectedReports.filter(x => x !== id);
-              card.classList.remove('selected');
+            function updateVisibleCount() {
+                const visibleCount = cards().filter((card) => card.style.display !== "none").length;
+                emptyMsg.style.display = visibleCount === 0 ? "block" : "none";
+                countEl.textContent = String(visibleCount);
             }
-          });
 
-          this._bulkSync = false;
-          this.syncSelectAll();
-        },
+            function applyFilters() {
+                const q = (searchInput.value || "").toLowerCase().trim();
+                const c = (customerSel.value || "").trim();
 
-        syncSelectAll(){
-          const visibleCards = Array.from(this.$refs.list.querySelectorAll('.report-card'))
-            .filter(card => card.style.display !== 'none');
+                cards().forEach((card) => {
+                    const search = (card.dataset.search || "");
+                    const cust = (card.dataset.customer || "").trim();
 
-          const cbs = visibleCards
-            .map(card => card.querySelector('input.row-checkbox'))
-            .filter(Boolean);
+                    let show = true;
+                    if (q && !search.includes(q)) show = false;
+                    if (c && cust !== c) show = false;
 
-          const anyChecked = cbs.some(cb => cb.checked);
-          const allChecked = (cbs.length > 0) && cbs.every(cb => cb.checked);
+                    card.style.display = show ? "flex" : "none";
+                });
 
-          this.$refs.selectAll.indeterminate = anyChecked && !allChecked;
-          this.$refs.selectAll.checked = allChecked;
+                updateVisibleCount();
+
+                if (window.__trashEngineSyncSelectAll) {
+                    window.__trashEngineSyncSelectAll();
+                }
+            }
+
+            function applySort() {
+                const mode = sortSel.value;
+
+                const sorted = [...cards()].sort((a, b) => {
+                    const da = toTime(a.dataset.deleted);
+                    const db = toTime(b.dataset.deleted);
+                    if (mode === "newest") return db - da;
+                    if (mode === "oldest") return da - db;
+                    return 0;
+                });
+
+                sorted.forEach((card) => list.appendChild(card));
+                applyFilters();
+            }
+
+            searchInput.addEventListener("input", applyFilters);
+            customerSel.addEventListener("change", applyFilters);
+            sortSel.addEventListener("change", applySort);
+
+            applySort();
+        });
+
+        function trashEngineBulk() {
+            return {
+                selectedReports: [],
+                _bulkSync: false,
+
+                toggleOne(id, evt) {
+                    const cb = evt.target;
+                    const card = cb.closest('.report-card');
+
+                    if (cb.checked) {
+                        if (!this.selectedReports.includes(id)) this.selectedReports.push(id);
+                        card.classList.add('selected');
+                    } else {
+                        this.selectedReports = this.selectedReports.filter((x) => x !== id);
+                        card.classList.remove('selected');
+                    }
+
+                    if (!this._bulkSync) this.syncSelectAll();
+                },
+
+                toggleSelectAll(evt) {
+                    const checked = evt.target.checked;
+
+                    const visibleCards = Array.from(this.$refs.list.querySelectorAll('.report-card'))
+                        .filter((card) => card.style.display !== 'none');
+
+                    this._bulkSync = true;
+
+                    visibleCards.forEach((card) => {
+                        const id = Number(card.dataset.id || 0);
+                        const cb = card.querySelector('input.row-checkbox');
+                        if (!cb || !id) return;
+
+                        cb.checked = checked;
+
+                        if (checked) {
+                            if (!this.selectedReports.includes(id)) this.selectedReports.push(id);
+                            card.classList.add('selected');
+                        } else {
+                            this.selectedReports = this.selectedReports.filter((x) => x !== id);
+                            card.classList.remove('selected');
+                        }
+                    });
+
+                    this._bulkSync = false;
+                    this.syncSelectAll();
+                },
+
+                syncSelectAll() {
+                    const visibleCards = Array.from(this.$refs.list.querySelectorAll('.report-card'))
+                        .filter((card) => card.style.display !== 'none');
+
+                    const cbs = visibleCards
+                        .map((card) => card.querySelector('input.row-checkbox'))
+                        .filter(Boolean);
+
+                    const anyChecked = cbs.some((cb) => cb.checked);
+                    const allChecked = cbs.length > 0 && cbs.every((cb) => cb.checked);
+
+                    this.$refs.selectAll.indeterminate = anyChecked && !allChecked;
+                    this.$refs.selectAll.checked = allChecked;
+                }
+            }
         }
-      }
-    }
-  </script>
+    </script>
 
 </div>
 
-
 <style>
-/* ===================== KHUSUS TRASH PAGE ===================== */
-[x-cloak]{ display:none !important; }
+    [x-cloak]{
+        display:none !important;
+    }
 
-.trash-page .btn-back{
-  display:inline-block;color:white;padding:8px 18px;border-radius:8px;background:#5f656a;
-  font-weight:600;font-size:14px;text-decoration:none;transition:.2s;
-  box-shadow:0 3px 7px rgba(0,0,0,.15);margin-bottom:18px
-}
-.trash-page .btn-back:hover{background:#2b2d2f;transform:translateY(-2px)}
+    [data-page="trash-engine"]{
+        --trash-accent: #E40505;
+        --trash-surface: #ffffff;
+        --trash-border: #d7e1ef;
+        --trash-text: #0f172a;
+        --trash-muted: #5f6d84;
+        --trash-shadow: 0 3px 10px rgba(0,0,0,.07);
+        padding-bottom:110px;
+        font-family:Arial, sans-serif;
+        background:#f5f7fb;
+        border-radius:14px;
+        padding:12px;
+    }
 
-.trash-page .header-card{
-  background:white;padding:22px;border-radius:14px;margin-bottom:20px;
-  box-shadow:0 3px 10px rgba(0,0,0,.07)
-}
-.trash-page .header-left{display:flex;align-items:center;gap:18px}
-.trash-page .header-logo{width:80px;height:80px;object-fit:contain}
-.trash-page .header-title{font-size:20px;font-weight:800;margin:0}
-.trash-page .header-subtitle{font-size:14px;color:#555;margin-top:4px}
+    [data-page="trash-engine"] .top-toolbar{
+        display:flex;
+        align-items:center;
+        justify-content:flex-start;
+        gap:12px;
+        margin-bottom:16px;
+        flex-wrap:wrap;
+    }
+    [data-page="trash-engine"] .btn-back{
+        display:inline-flex;
+        align-items:center;
+        color:#fff;
+        padding:9px 18px;
+        border-radius:10px;
+        background:#5f656a;
+        font-weight:700;
+        font-size:14px;
+        text-decoration:none;
+        transition:.2s ease;
+        box-shadow:0 6px 16px rgba(0,0,0,.16);
+    }
+    [data-page="trash-engine"] .btn-back:hover{
+        background:#2f3439;
+    }
 
-.trash-page .accent-line-dark{
-  height:4px;background:#2b2d2f;border-radius:20px;margin-bottom:18px
-}
+    [data-page="trash-engine"] .header-card{
+        background:#ffffff;
+        padding:22px;
+        border-radius:14px;
+        margin-bottom:20px;
+        box-shadow:var(--trash-shadow);
+        border:1px solid var(--trash-border);
+    }
+    [data-page="trash-engine"] .header-left{
+        display:flex;
+        align-items:center;
+        gap:18px;
+    }
+    [data-page="trash-engine"] .header-logo{
+        width:80px;
+        height:80px;
+        object-fit:contain;
+    }
+    [data-page="trash-engine"] .header-title{
+        margin:0;
+        font-size:20px;
+        line-height:1.1;
+        font-weight:800;
+        color:var(--trash-text);
+    }
+    [data-page="trash-engine"] .header-subtitle{
+        margin:4px 0 0;
+        color:var(--trash-muted);
+        font-size:14px;
+        font-weight:600;
+    }
+    [data-page="trash-engine"] .accent-line{
+        height:4px;
+        background:#E40505;
+        border-radius:999px;
+        margin-bottom:18px;
+    }
 
-.trash-page .box{
-  background:white;padding:22px;border-radius:14px;margin-bottom:22px;
-  box-shadow:0 3px 10px rgba(0,0,0,.07)
-}
+    [data-page="trash-engine"] .stats-grid{
+        display:grid;
+        grid-template-columns:repeat(3, minmax(130px, 1fr));
+        gap:10px;
+        margin-bottom:16px;
+    }
+    [data-page="trash-engine"] .stat-card{
+        background:#fff;
+        border:1px solid var(--trash-border);
+        border-radius:10px;
+        box-shadow:var(--trash-shadow);
+        padding:10px 14px;
+        min-height:78px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+    }
+    [data-page="trash-engine"] .stat-label{
+        color:var(--trash-muted);
+        font-weight:700;
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:.04em;
+    }
+    [data-page="trash-engine"] .stat-value{
+        margin-top:2px;
+        color:var(--trash-text);
+        font-weight:800;
+        font-size:20px;
+        line-height:1;
+    }
 
-/* ===================== FILTER ===================== */
-.filter-row{display:flex;align-items:flex-end;gap:20px;flex-wrap:nowrap;width:100%}
-.filter-large{flex:1;margin-right:30px}
-.filter-small{flex:0 0 240px}
-.input{
-  width:100%;padding:12px 14px;border-radius:10px;border:1px solid #ccc;
-  background:#fafafa;font-size:14px
-}
-@media (max-width:1024px){
-  .filter-row{flex-wrap:wrap;gap:18px}
-  .filter-large{flex:1 0 100%;margin-right:0;padding-right:30px;box-sizing:border-box}
-  .filter-small{flex:1}
-}
-@media (max-width:600px){
-  .filter-row{flex-direction:column;align-items:flex-start;gap:16px}
-  .filter-large{width:100%;padding-right:30px;box-sizing:border-box}
-  .filter-small{width:100%}
-}
+    [data-page="trash-engine"] .box{
+        background:var(--trash-surface);
+        padding:22px;
+        border-radius:14px;
+        margin-bottom:22px;
+        box-shadow:var(--trash-shadow);
+        border:1px solid var(--trash-border);
+    }
+    [data-page="trash-engine"] .filter-box{
+        background:#ffffff;
+    }
+    [data-page="trash-engine"] .section-title{
+        margin:0 0 16px;
+        font-size:18px;
+        font-weight:700;
+        line-height:1.15;
+        color:var(--trash-text);
+    }
 
-/* ===================== BULK BAR ===================== */
-.bulk-bar{
-  display:flex;
-  gap:14px;
-  align-items:center;
-  margin-bottom:18px;
-  padding:14px;
-  border-radius:14px;
-  background:white;
-  box-shadow:0 3px 10px rgba(0,0,0,.07);
-}
-.bulk-form{ margin:0; }
-.btn-bulk{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  padding:12px 18px;
-  border-radius:12px;
-  font-weight:800;
-  border:0;
-  cursor:pointer;
-  color:white;
-  box-shadow:0 3px 7px rgba(0,0,0,.15);
-  transition:.2s;
-}
-.btn-bulk:hover{ transform:translateY(-2px); }
-.bulk-restore{ background:#0D6EFD; }
-.bulk-delete{ background:#C62828; }
+    [data-page="trash-engine"] .filter-row{
+        display:grid;
+        grid-template-columns:minmax(0, 1.7fr) repeat(2, minmax(0, 1fr));
+        column-gap:24px;
+        row-gap:16px;
+        align-items:end;
+        width:100%;
+    }
+    [data-page="trash-engine"] .filter-row > *{
+        min-width:0;
+    }
+    [data-page="trash-engine"] .filter-group{
+        min-width:0;
+        display:flex;
+        flex-direction:column;
+        gap:8px;
+    }
+    [data-page="trash-engine"] .filter-group label{
+        display:block;
+        margin:0;
+        color:#1e293b;
+        font-weight:700;
+        font-size:14px;
+    }
+    [data-page="trash-engine"] .input{
+        width:100%;
+        max-width:100%;
+        box-sizing:border-box;
+        min-height:48px;
+        padding:12px 14px;
+        border-radius:10px;
+        border:1px solid #ccc;
+        background:#fff;
+        font-size:14px;
+        font-family:inherit;
+        color:#0f172a;
+        transition:border-color .18s ease, box-shadow .18s ease;
+    }
+    [data-page="trash-engine"] .input:focus{
+        outline:none;
+        border-color:var(--trash-accent);
+        box-shadow:0 0 0 4px rgba(228,5,5,.12);
+    }
 
-@media (max-width:600px){
-  .bulk-bar{flex-direction:column;align-items:stretch}
-  .btn-bulk{width:100%;justify-content:center}
-}
+    [data-page="trash-engine"] .report-list-box{
+        padding-top:18px;
+    }
+    [data-page="trash-engine"] .list-head{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        margin-bottom:12px;
+        flex-wrap:wrap;
+    }
+    [data-page="trash-engine"] .list-head-tools{
+        display:inline-flex;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
+    }
+    [data-page="trash-engine"] .btn-list-create{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        width:auto;
+        min-width:0;
+        min-height:30px;
+        padding:5px 10px;
+        border-radius:8px;
+        background:#fff;
+        color:#111;
+        text-decoration:none;
+        font-size:11px;
+        font-weight:700;
+        line-height:1;
+        border:1px solid #111;
+        box-shadow:0 1px 0 rgba(17,17,17,.08);
+        transition:transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease;
+    }
+    [data-page="trash-engine"] .btn-list-create:hover{
+        background:#f8fafc;
+        color:#111;
+        transform:translateY(-1px) scale(1.01);
+        box-shadow:0 4px 10px rgba(228,5,5,.14), 0 0 0 1px rgba(228,5,5,.18);
+        text-decoration:none;
+    }
+    [data-page="trash-engine"] .list-head-title{
+        font-size:14px;
+        color:#71809b;
+        font-weight:800;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+    }
+    [data-page="trash-engine"] .list-head-count{
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        padding:6px 11px;
+        border-radius:999px;
+        background:#edf2ff;
+        border:1px solid #d3def2;
+        color:#24344f;
+        font-size:12px;
+        font-weight:800;
+    }
+    [data-page="trash-engine"] .list-head-count .count-number{
+        font-size:15px;
+        line-height:1;
+        letter-spacing:-.02em;
+    }
+    [data-page="trash-engine"] .list-head-count .count-text{
+        font-size:12px;
+        font-weight:700;
+    }
 
-/* ===================== SELECT ALL ===================== */
-.select-all-row{display:flex;align-items:center;gap:12px;padding:6px 2px}
-.select-all-label{font-weight:700;cursor:pointer;user-select:none}
-.divider{height:1px;background:#eee;margin:10px 0 6px}
-.empty-text{margin:12px 0;color:#444}
+    [data-page="trash-engine"] .select-all-row{
+        display:flex;
+        align-items:center;
+        gap:14px;
+        padding:8px 4px 14px;
+        flex-wrap:wrap;
+    }
+    [data-page="trash-engine"] .select-all-label{
+        cursor:pointer;
+        user-select:none;
+        font-size:16px;
+        line-height:1;
+        color:#be123c;
+    }
+    [data-page="trash-engine"] .select-divider{
+        height:1px;
+        background:#e5ebf4;
+        margin:2px 0 12px;
+    }
+    [data-page="trash-engine"] .select-checkbox{
+        width:20px;
+        height:20px;
+        accent-color:#E11D48;
+        cursor:pointer;
+        flex:0 0 auto;
+    }
 
-/* ===================== CARD LIST ===================== */
-.report-card{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:18px 14px;border-bottom:1px solid #eee;gap:18px
-}
-.report-left{display:flex;align-items:center;gap:16px;flex:1}
-.select-checkbox{width:20px;height:20px;accent-color:#2b2d2f;cursor:pointer}
+    [data-page="trash-engine"] .report-card{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:18px;
+        padding:18px 14px;
+        margin-bottom:12px;
+        border-radius:14px;
+        border:1px solid #e4ebf5;
+        background:#fbfcff;
+        transition:border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+    }
+    [data-page="trash-engine"] .report-card:hover{
+        border-color:#cfdbec;
+        box-shadow:0 6px 16px rgba(20, 40, 90, .07);
+    }
+    [data-page="trash-engine"] .report-card.selected{
+        background:#fff5f5;
+        border-color:rgba(228,5,5,.35);
+        box-shadow:0 0 0 3px rgba(228,5,5,.12);
+    }
 
-.report-main{display:flex;flex-direction:column;gap:6px}
-.report-title{font-size:16px;font-weight:700}
-.report-meta{font-size:13px;color:#555;display:flex;flex-wrap:wrap;gap:8px}
-.report-meta span{background:#f5f5f5;padding:4px 8px;border-radius:999px}
+    [data-page="trash-engine"] .report-left{
+        display:flex;
+        align-items:center;
+        gap:16px;
+        min-width:0;
+        flex:1;
+    }
+    [data-page="trash-engine"] .report-main{
+        display:flex;
+        flex-direction:column;
+        gap:6px;
+        min-width:0;
+        width:100%;
+    }
+    [data-page="trash-engine"] .report-title{
+        display:flex;
+        flex-wrap:wrap;
+        align-items:center;
+        gap:10px;
+    }
+    [data-page="trash-engine"] .report-title > strong{
+        font-size:16px;
+        line-height:1.2;
+        color:var(--trash-text);
+        min-width:0;
+        overflow-wrap:anywhere;
+        word-break:break-word;
+    }
 
-.report-actions{
-  display:flex;gap:12px;align-items:center;border-left:2px solid #eee;padding-left:18px
-}
-.btn-premium{
-  display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;
-  font-size:14px;font-weight:700;color:white;border:0;cursor:pointer;
-  box-shadow:0 3px 6px rgba(0,0,0,.1);transition:.2s
-}
-.btn-premium:hover{transform:translateY(-2px)}
-.restore-btn{background:#0D6EFD}
-.delete-btn{background:#C62828}
+    [data-page="trash-engine"] .report-meta{
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+    }
+    [data-page="trash-engine"] .report-meta span{
+        background:#eef2f7;
+        border:1px solid #dbe3ef;
+        color:#334155;
+        padding:4px 10px;
+        border-radius:999px;
+        font-size:13px;
+        line-height:1.25;
+        max-width:100%;
+        overflow-wrap:anywhere;
+        word-break:break-word;
+    }
+    [data-page="trash-engine"] .report-meta span b{
+        color:#1f2937;
+    }
 
-/* selected */
-.report-card.selected{
-  background:#fff5f5;
-  border:2px solid rgba(228,5,5,.25);
-  box-shadow:0 0 14px rgba(228,5,5,.18);
-  border-radius:14px
-}
+    [data-page="trash-engine"] .report-actions{
+        display:flex;
+        flex-wrap:wrap;
+        justify-content:flex-end;
+        gap:7px;
+        border-left:2px solid #eee;
+        padding-left:12px;
+        min-width:232px;
+        max-width:232px;
+        flex:0 0 auto;
+        align-items:center;
+    }
+    [data-page="trash-engine"] .report-actions > form{
+        width:110px;
+        flex:0 0 110px;
+        margin:0;
+        display:block;
+    }
+    [data-page="trash-engine"] .report-actions form .btn-premium{
+        border:none;
+        cursor:pointer;
+        width:100%;
+    }
 
-/* mobile */
-@media (max-width:600px){
-  .report-card{flex-direction:column;align-items:flex-start;gap:14px}
-  .report-actions{border-left:none;padding-left:0;width:100%;flex-wrap:wrap;gap:10px}
-  .report-actions button{width:100%;justify-content:center}
-}
+    [data-page="trash-engine"] .btn-premium{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:6px;
+        min-width:0;
+        width:100%;
+        min-height:34px;
+        padding:6px 10px;
+        border-radius:9px;
+        font-size:12px;
+        font-weight:600;
+        color:#fff;
+        text-decoration:none;
+        line-height:1;
+        box-shadow:0 3px 6px rgba(0,0,0,.1);
+        transition:background-color .16s ease, border-color .16s ease, color .16s ease, opacity .16s ease, box-shadow .16s ease;
+        border:1px solid rgba(0,0,0,.05);
+    }
+    [data-page="trash-engine"] .btn-premium:hover{
+        text-decoration:none;
+        transform:translateY(-1px);
+        box-shadow:0 4px 10px rgba(0,0,0,.15);
+    }
+    [data-page="trash-engine"] .restore-btn{
+        background:#0D6EFD;
+    }
+    [data-page="trash-engine"] .restore-btn:hover{
+        background:#0b5ed7;
+    }
+    [data-page="trash-engine"] .delete-btn{
+        background:#dc3545;
+    }
+    [data-page="trash-engine"] .delete-btn:hover{
+        background:#c82333;
+    }
+
+    [data-page="trash-engine"] .empty-state{
+        margin:14px 4px 2px;
+        padding:22px;
+        border:1px dashed #c9d7eb;
+        border-radius:12px;
+        background:#f8fbff;
+        color:#4c5d77;
+        font-size:14px;
+        font-weight:700;
+    }
+
+    [data-page="trash-engine"] .bulk-bar{
+        position:fixed;
+        left:50%;
+        bottom:20px;
+        transform:translateX(-50%);
+        z-index:9999;
+        margin:0;
+        padding:8px;
+        display:flex;
+        align-items:center;
+        gap:8px;
+        background:rgba(255,255,255,.95);
+        backdrop-filter:blur(6px);
+        -webkit-backdrop-filter:blur(6px);
+        border:1px solid #d8e3f2;
+        border-radius:16px;
+        box-shadow:0 14px 36px rgba(0,0,0,.18);
+        width:fit-content;
+        max-width:calc(100vw - 24px);
+    }
+    [data-page="trash-engine"] .bulk-form{
+        margin:0;
+    }
+    [data-page="trash-engine"] .bulk-btn{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:8px;
+        padding:10px 14px;
+        border-radius:12px;
+        border:1px solid #d5dfef;
+        background:#f4f8ff;
+        color:#0f172a;
+        font-weight:900;
+        font-size:14px;
+        cursor:pointer;
+        transition:.18s ease;
+    }
+    [data-page="trash-engine"] .bulk-btn-restore:hover{
+        background:rgba(13,110,253,.12);
+        border-color:rgba(13,110,253,.25);
+        color:#0b5ed7;
+    }
+    [data-page="trash-engine"] .bulk-btn-danger:hover{
+        background:rgba(220,53,69,.12);
+        border-color:rgba(220,53,69,.25);
+        color:#dc3545;
+    }
+
+    @media (max-width: 1100px){
+        [data-page="trash-engine"] .stats-grid{
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+        }
+        [data-page="trash-engine"] .filter-row{
+            grid-template-columns:repeat(2, minmax(0, 1fr));
+            gap:16px;
+        }
+        [data-page="trash-engine"] .filter-group.filter-large{
+            grid-column:1 / -1;
+        }
+        [data-page="trash-engine"] .report-card{
+            flex-direction:column;
+            align-items:stretch;
+        }
+        [data-page="trash-engine"] .report-actions{
+            width:100%;
+            max-width:none;
+            min-width:0;
+            border-left:none;
+            border-top:1px dashed #d6e1ee;
+            padding-left:0;
+            padding-top:12px;
+            display:grid;
+            grid-template-columns:repeat(2, minmax(0, 110px));
+            justify-content:end;
+            gap:7px;
+        }
+    }
+
+    @media (max-width: 1024px){
+        [data-page="trash-engine"] .top-toolbar{
+            flex-direction:column;
+            align-items:stretch;
+        }
+        [data-page="trash-engine"] .header-card{
+            padding:18px;
+        }
+        [data-page="trash-engine"] .header-left{
+            align-items:flex-start;
+        }
+        [data-page="trash-engine"] .stats-grid{
+            grid-template-columns:repeat(2, minmax(0, 1fr));
+        }
+        [data-page="trash-engine"] .box{
+            padding:18px;
+        }
+        [data-page="trash-engine"] .filter-row{
+            grid-template-columns:1fr;
+            row-gap:14px;
+        }
+        [data-page="trash-engine"] .list-head{
+            align-items:flex-start;
+            gap:10px;
+        }
+        [data-page="trash-engine"] .list-head-tools{
+            width:100%;
+            justify-content:space-between;
+        }
+        [data-page="trash-engine"] .report-card{
+            padding:16px;
+        }
+    }
+
+    @media (max-width: 640px){
+        [data-page="trash-engine"]{
+            padding-bottom:120px;
+        }
+        [data-page="trash-engine"] .top-toolbar{
+            gap:10px;
+        }
+        [data-page="trash-engine"] .btn-back{
+            min-height:44px;
+        }
+        [data-page="trash-engine"] .header-left{
+            flex-direction:column;
+            align-items:flex-start;
+            gap:10px;
+        }
+        [data-page="trash-engine"] .header-logo{
+            width:70px;
+            height:70px;
+        }
+        [data-page="trash-engine"] .stats-grid{
+            grid-template-columns:1fr;
+            gap:12px;
+        }
+        [data-page="trash-engine"] .stat-card{
+            min-height:84px;
+            padding:12px 16px;
+        }
+        [data-page="trash-engine"] .stat-value{
+            font-size:24px;
+        }
+        [data-page="trash-engine"] .list-head{
+            flex-direction:column;
+            align-items:flex-start;
+            gap:8px;
+        }
+        [data-page="trash-engine"] .list-head-tools{
+            width:100%;
+            justify-content:space-between;
+            gap:8px;
+        }
+        [data-page="trash-engine"] .btn-list-create{
+            min-height:28px;
+            font-size:10px;
+            padding:5px 8px;
+            border-radius:8px;
+        }
+        [data-page="trash-engine"] .select-all-row{
+            align-items:flex-start;
+            flex-direction:column;
+            gap:8px;
+        }
+        [data-page="trash-engine"] .report-title > strong{
+            font-size:16px;
+            flex:1 1 100%;
+        }
+        [data-page="trash-engine"] .report-meta span{
+            font-size:12px;
+            padding:4px 9px;
+        }
+        [data-page="trash-engine"] .report-actions{
+            grid-template-columns:repeat(2, minmax(0, 104px));
+            justify-content:end;
+            gap:7px;
+        }
+        [data-page="trash-engine"] .btn-premium{
+            min-height:34px;
+            border-radius:9px;
+            padding:6px 9px;
+            font-size:12px;
+        }
+        [data-page="trash-engine"] .bulk-bar{
+            bottom:calc(10px + env(safe-area-inset-bottom));
+            border-radius:14px;
+            padding:6px;
+            flex-wrap:wrap;
+            justify-content:center;
+        }
+        [data-page="trash-engine"] .bulk-btn{
+            font-size:13px;
+            padding:8px 12px;
+            border-radius:10px;
+        }
+    }
 </style>
 
 @endsection

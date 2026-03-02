@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f172a">
+    <title>CCR RNF — Offline</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fb;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(15,23,42,.08);
+            max-width: 420px;
+            width: 100%;
+        }
+        .icon { font-size: 48px; margin-bottom: 16px; }
+        h1 { font-size: 22px; font-weight: 900; margin-bottom: 10px; }
+        p { color: #64748b; font-size: 15px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
+        .btn {
+            display: inline-block;
+            background: #0f172a;
+            color: #fff;
+            padding: 12px 28px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 15px;
+            transition: .2s;
+        }
+        .btn:hover { background: #1e293b; transform: translateY(-1px); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">📡</div>
+        <h1>Tidak Ada Koneksi</h1>
+        <p>Periksa koneksi internet Anda dan coba lagi.</p>
+        <a href="/" class="btn" onclick="window.location.reload(); return false;">Coba Lagi</a>
+    </div>
+</body>
+</html>

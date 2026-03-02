@@ -2,7 +2,7 @@
 
 @section('content')
 
-<a href="{{ route('ccr.manage.menu') }}" class="btn-back">← Kembali</a>
+<a href="{{ route('ccr.index') }}" class="btn-back">← Kembali</a>
 
 <div class="header-card">
   <h1>🗑️ Sampah CCR</h1>

@@ -12,6 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Global middleware — runs on every request
+        $middleware->prepend([
+            \App\Http\Middleware\ForceHttps::class,
+            \App\Http\Middleware\SecurityHeaders::class,
+        ]);
+
         $middleware->alias([
             'role'    => \App\Http\Middleware\RoleMiddleware::class,
             'nocache' => \App\Http\Middleware\NoCache::class,

@@ -6,21 +6,25 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-public function up(): void
-{
-    Schema::table('inbox_messages', function (Blueprint $table) {
-        $table->timestamp('read_at')->nullable()->after('is_read');
-    });
-}
+    public function up(): void
+    {
+        if (!Schema::hasTable('inbox_messages') || Schema::hasColumn('inbox_messages', 'read_at')) {
+            return;
+        }
 
-public function down(): void
-{
-    Schema::table('inbox_messages', function (Blueprint $table) {
-        $table->dropColumn('read_at');
-    });
-}
+        Schema::table('inbox_messages', function (Blueprint $table) {
+            $table->timestamp('read_at')->nullable()->after('is_read');
+        });
+    }
 
+    public function down(): void
+    {
+        if (!Schema::hasTable('inbox_messages') || !Schema::hasColumn('inbox_messages', 'read_at')) {
+            return;
+        }
+
+        Schema::table('inbox_messages', function (Blueprint $table) {
+            $table->dropColumn('read_at');
+        });
+    }
 };

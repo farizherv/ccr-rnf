@@ -4,6 +4,12 @@
     <title>CCR RNF</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CCR RNF">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="{{ asset('manifest.webmanifest') }}">
 
         @auth
     <script>
@@ -113,11 +119,25 @@
         }
         .btn-primary { background:#0d6efd; }
         .btn-success { background:#198754; }
-        .btn-monitoring{
-            background:#9F8170 !important;
+        .topbar .btn-modern.btn-monitoring{
+            background:#ffffff !important;
+            color:#0f1b3a !important;
+            border:2px solid #bccce2 !important;
+            box-shadow: 0 3px 8px rgba(15, 27, 58, .08);
         }
-        .btn-monitoring:hover{
-            filter: brightness(.95);
+        .topbar .btn-modern.btn-primary{
+            background:#ffffff !important;
+            color:#0f1b3a !important;
+            border:2px solid #bccce2 !important;
+            box-shadow: 0 3px 8px rgba(15, 27, 58, .08);
+        }
+        .topbar .btn-modern.btn-monitoring:hover,
+        .topbar .btn-modern.btn-primary:hover{
+            background:#ffffff !important;
+            color:#0f1b3a !important;
+            border-color:#f2aaaa !important;
+            box-shadow: 0 5px 12px rgba(228, 5, 5, .14) !important;
+            transform: translateY(-1px);
         }
         .btn-danger  { background:#dc3545; }
         .btn-back    { background:#6c757d; }
@@ -312,14 +332,20 @@
         .drop-head .meta { margin-top:3px; font-weight:800; font-size:12px; color:#6b7280; }
         .drop-item {
             width:100%;
-            text-align:left;
+            text-align:center;
             border:none;
-            background:#fff;
+            background:#0b1733;
+            color:#fff;
             padding:12px 14px;
             cursor:pointer;
             font-weight:900;
+            border-radius:0;
+            transition:background .18s ease, color .18s ease;
         }
-        .drop-item:hover { background:#f8fafc; }
+        .drop-item:hover {
+            background:#E40505;
+            color:#fff;
+        }
 
         /* =========================================================
            INBOX DROPDOWN PANEL
@@ -330,11 +356,11 @@
             position:absolute;
             right:0;
             top:52px;
-            width: min(360px, calc(100vw - 24px));
+            width: min(760px, calc(100vw - 24px));
             background:#fff;
-            border-radius:16px;
-            box-shadow:0 22px 55px rgba(0,0,0,.16);
-            border:1px solid #e9eef5;
+            border-radius:24px;
+            box-shadow:0 22px 55px rgba(15,23,42,.18);
+            border:1px solid #dbe5f3;
             overflow:hidden;
             z-index:10000;
         }
@@ -342,11 +368,11 @@
         .notif-head{
             display:flex;
             align-items:center;
-            justify-content:space-between;
+            justify-content:flex-start;
             gap:12px;
-            padding:12px 14px;
+            padding:18px 22px;
             border-bottom:1px solid #eef2f7;
-            background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+            background:#fff;
         }
 
         .notif-title{
@@ -354,49 +380,38 @@
             color:#111827;
             font-size:16px;
             letter-spacing:.2px;
+            line-height:1;
         }
-
-        .notif-markall{
-            border:0;
-            background:transparent;
-            color:#0D6EFD;
-            font-weight:900;
-            cursor:pointer;
-            padding:6px 8px;
-            border-radius:10px;
-            font-size:13px;
-            white-space:nowrap;
-        }
-        .notif-markall:hover{ background:#eef6ff; }
 
         .notif-body{
-            max-height: min(360px, calc(100vh - 180px));
+            max-height: min(520px, calc(100vh - 180px));
             overflow:auto;
             -webkit-overflow-scrolling: touch;
         }
 
         .notif-empty{
-            padding:12px 14px;
+            padding:14px 18px;
             color:#6b7280;
             font-weight:800;
-            font-size:13px;
+            font-size:14px;
         }
 
         .notif-item{
             display:flex;
-            gap:10px;
-            padding:12px 14px;
-            border-bottom:1px solid #f1f5f9;
+            gap:12px;
             align-items:flex-start;
+            padding:14px 16px;
+            border-bottom:1px solid #e6edf6;
+            justify-content:space-between;
         }
 
-        .notif-item.unread{ background:#f7fbff; }
-        .notif-item.read{ background:#fff; opacity:.92; }
+        .notif-item.unread{ background:#f8fbff; }
+        .notif-item.read{ background:#fff; opacity:.94; }
 
         .notif-dot{
-            width:10px; height:10px; border-radius:999px;
+            width:14px; height:14px; border-radius:999px;
             background:#cbd5e1;
-            margin-top:7px;
+            margin-top:8px;
             flex:0 0 auto;
         }
         .notif-item.unread .notif-dot{ background:#2563eb; }
@@ -405,8 +420,8 @@
 
         .notif-h{
             font-weight:1000;
-            font-size:15px;
-            line-height:1.15;
+            font-size:17px;
+            line-height:1.2;
             color:#0f172a;
             overflow:hidden;
             text-overflow:ellipsis;
@@ -415,43 +430,74 @@
 
         .notif-m{
             margin-top:6px;
-            color:#111827;
-            font-weight:800;
-            font-size:13px;
-            line-height:1.25;
-            overflow:hidden;
-            text-overflow:ellipsis;
-            white-space:nowrap;
+            min-width:0;
         }
-
-        .notif-meta{
-            margin-top:8px;
-            color:#6b7280;
-            font-weight:800;
-            font-size:12px;
+        .notif-msg-row{
             display:flex;
-            gap:10px;
             align-items:center;
             flex-wrap:wrap;
+            gap:8px;
+        }
+        .notif-msg-actor{
+            color:#6b7280;
+            font-weight:700;
+            font-size:13px;
+            letter-spacing:0;
+            line-height:1.25;
+        }
+        .notif-msg-label{
+            color:#111827;
+            font-weight:900;
+            font-size:14px;
+            line-height:1.25;
+        }
+        .notif-msg-note{
+            margin-top:4px;
+            color:#111827;
+            font-weight:800;
+            font-size:14px;
+            line-height:1.3;
+            overflow-wrap:anywhere;
+            word-break:break-word;
+            display:-webkit-box;
+            -webkit-line-clamp:2;
+            -webkit-box-orient:vertical;
+            overflow:hidden;
+        }
+
+        .notif-side{
+            min-width:160px;
+            margin-top:2px;
+            display:flex;
+            flex-direction:column;
+            justify-content:center;
+            align-items:flex-end;
+            gap:8px;
+        }
+        .notif-meta{
+            color:#6b7280;
+            font-weight:700;
+            font-size:12px;
+            text-align:right;
         }
 
         .notif-open{
             color:#0D6EFD;
             font-weight:1000;
             text-decoration:none;
-            padding:4px 8px;
+            padding:6px 10px;
             border-radius:10px;
-            font-size:12px;
+            font-size:13px;
         }
         .notif-open:hover{ background:#eef6ff; }
 
         .notif-panel .notif-pill{
             display:inline-flex;
             align-items:center;
-            padding:5px 12px;
+            padding:8px 14px;
             border-radius:999px;
             font-weight:900;
-            font-size:12px;
+            font-size:13px;
             line-height:1;
             border:2px solid transparent;
             background:#fff;
@@ -469,47 +515,31 @@
             border-color: rgba(239,68,68,.25);
         }
 
-        .notif-readbtn{
-            border:0;
-            background:#111827;
-            color:#fff;
-            font-weight:1000;
-            border-radius:999px;
-            padding:9px 12px;
-            cursor:pointer;
-            min-width:76px;
-            height:36px;
-            font-size:13px;
-            box-shadow:0 10px 18px rgba(17,24,39,.14);
-            flex:0 0 auto;
-        }
-        .notif-readbtn:hover{ filter:brightness(.96); transform: translateY(-1px); }
-
-        /* ✅ UPDATED FOOTER: kanan bawah + View all + Clear read */
+        /* ✅ UPDATED FOOTER: kanan bawah + View all + Clear all */
         .notif-foot{
-            padding:10px 14px;
+            padding:14px 18px;
             border-top:1px solid #eef2f7;
-            background:#fbfdff;
+            background:#fff;
         }
         .notif-foot-row{
             display:flex;
             align-items:center;
-            justify-content:space-between; /* ✅ View all kiri, Clear read kanan */
+            justify-content:space-between; /* ✅ View all kiri, Clear all kanan */
             gap:10px;
         }
         .notif-clearform{ margin:0; }
 
-        /* View all: default sama seperti Clear read, hover soft blue */
+        /* View all: default sama seperti Clear all, hover soft blue */
         /* base tombol footer: bikin ukuran & border konsisten */
         .notif-foot-btn{
             display:inline-flex;
             align-items:center;
             justify-content:center;
 
-            padding:10px 16px;          /* samakan padding */
-            border-radius:16px;         /* samakan radius */
-            border:1px solid #e5e7eb;   /* samakan border */
-            background:#f1f5f9;
+            padding:14px 22px;
+            border-radius:999px;
+            border:1px solid #dbe5f3;
+            background:#f8fbff;
             color:#0f172a;
 
             font-weight:1000;
@@ -531,7 +561,7 @@
         }
         .notif-viewall:active{ transform: translateY(0px); }
 
-        /* Clear read: hover soft red */
+        /* Clear all: hover soft red */
         .notif-clearread:hover{
             background: rgba(220,53,69,.10);
             border-color: rgba(220,53,69,.25);
@@ -545,6 +575,12 @@
         @media (max-width: 520px){
             .notif-body{ max-height: min(52vh, 320px); }
             .drop{ width: min(320px, calc(100vw - 24px)); }
+            .notif-side{
+                min-width:0;
+                align-items:flex-start;
+                gap:6px;
+            }
+            .notif-meta{ text-align:left; }
         }
 
         /* =========================================================
@@ -701,22 +737,23 @@
 
             $hasInboxRoute = \Illuminate\Support\Facades\Route::has('inbox.index');
             $hasInboxPanelRoute = \Illuminate\Support\Facades\Route::has('inbox.panel');
-            $hasInboxClearRead = \Illuminate\Support\Facades\Route::has('inbox.clearRead'); // ✅ optional safety
+            $hasInboxClearAll = \Illuminate\Support\Facades\Route::has('inbox.clearAll');
         @endphp
 
         <div class="box topbar">
             {{-- LEFT BUTTONS --}}
             @php
-                $role = strtolower(trim((string) auth()->user()->role));
+                $roleRaw = auth()->user()->role;
+                $role = $roleRaw instanceof \App\Enums\UserRole ? $roleRaw->value : strtolower(trim((string) $roleRaw));
             @endphp
 
             <div class="top-left">
                 @if($role === 'director')
-                    <a href="{{ route('director.monitoring') }}" class="btn-modern btn-monitoring">📋 Monitoring Direktur</a>
+                    <a href="{{ route('director.monitoring') }}" class="btn-modern btn-monitoring">Monitoring</a>
                 @endif
 
                 @if(in_array($role, ['admin','director'], true))
-                    <a href="{{ route('admin.users.index') }}" class="btn-modern btn-primary">👥 User Management</a>
+                    <a href="{{ route('admin.users.index') }}" class="btn-modern btn-primary">User Management</a>
                 @endif
             </div>
 
@@ -734,10 +771,6 @@
                         <div class="notif-panel" id="notifPanel" style="display:none;">
                             <div class="notif-head">
                                 <div class="notif-title">Notifications</div>
-                                <form method="POST" action="{{ route('inbox.readAll') }}" style="margin:0;">
-                                    @csrf
-                                    <button class="notif-markall" type="submit">Mark all as read</button>
-                                </form>
                             </div>
 
                             <div class="notif-body" id="notifBody">
@@ -747,13 +780,13 @@
                             <div class="notif-foot">
                                 <div class="notif-foot-row">
                                         <a class="notif-viewall notif-foot-btn" href="{{ route('inbox.index') }}">View all</a>
-                                    @if($hasInboxClearRead)
+                                    @if($hasInboxClearAll)
                                         <form method="POST"
-                                            action="{{ route('inbox.clearRead') }}"
+                                            action="{{ route('inbox.clearAll') }}"
                                             class="notif-clearform"
-                                            onsubmit="return confirm('Hapus semua notifikasi yang sudah dibaca?');">
+                                            onsubmit="return confirm('Hapus semua notifikasi?');">
                                             @csrf
-                                            <button type="submit" class="notif-clearread notif-foot-btn">Clear read</button>
+                                            <button type="submit" class="notif-clearread notif-foot-btn">Clear all</button>
                                         </form>
                                     @endif
                                 </div>
@@ -797,13 +830,16 @@
                         <div class="drop-head">
                             <div class="name">{{ auth()->user()->name }}</div>
                             <div class="meta">
-                                {{ strtoupper(auth()->user()->role === 'operator' ? 'PLANNER' : auth()->user()->role) }}
+                                @php
+                                    $displayRole = $role === 'operator' ? 'PLANNER' : strtoupper($role);
+                                @endphp
+                                {{ $displayRole }}
                             </div>
                         </div>
 
                         <form method="POST" action="{{ route('logout') }}" style="margin:0;">
                             @csrf
-                            <button type="submit" class="drop-item">🚪 Logout</button>
+                            <button type="submit" class="drop-item">LOG OUT</button>
                         </form>
                     </div>
                 </div>
@@ -865,6 +901,7 @@
         const badge = document.getElementById('notifBadge');
         const tokenEl = document.querySelector('meta[name="csrf-token"]');
         const token = tokenEl ? tokenEl.getAttribute('content') : '';
+        const pendingReadIds = new Set();
 
         function isShown(el){
             if(!el) return false;
@@ -885,17 +922,47 @@
         }
 
         function renderMsg(raw){
-            const esc = escapeHtml(raw || '');
-            const m = esc.match(/^\s*(Approved|Rejected)\b\s*(.*)$/i);
-            if (!m) return esc;
+            const plain = String(raw ?? '').trim();
+            if (!plain) return `<div class="notif-msg-note">-</div>`;
 
-            const status = m[1];
-            const rest   = m[2] || '';
-            const cls = /^approved$/i.test(status)
-                ? 'notif-pill notif-pill-approved'
-                : 'notif-pill notif-pill-rejected';
+            const parsed = plain.match(/^\s*(Approved|Rejected)\s+oleh\s+(.+?)\s*(?:\.?\s*Catatan:\s*(.*))?\s*$/iu);
+            if (parsed) {
+                const statusText = /^approved$/i.test(parsed[1]) ? 'Approved' : 'Rejected';
+                const cls = statusText === 'Approved'
+                    ? 'notif-pill notif-pill-approved'
+                    : 'notif-pill notif-pill-rejected';
+                const actor = escapeHtml((parsed[2] || '').trim());
 
-            return `<span class="${cls}">${status}</span> ${rest}`;
+                return `
+                    <div class="notif-msg-row">
+                        <span class="${cls}">${statusText}</span>
+                        <span class="notif-msg-actor">By ${actor}</span>
+                    </div>
+                `;
+            }
+
+            const noNote = plain.replace(/\.?\s*Catatan:\s*.*$/iu, '').trim();
+            const submitBy = noNote.match(/^\s*(?:di)?submit(?:ted)?\s+(?:by|oleh)\s+(.+?)\.?\s*$/iu);
+            if (submitBy) {
+                const actor = escapeHtml((submitBy[1] || '').trim().replace(/\.$/, ''));
+                return `
+                    <div class="notif-msg-row">
+                        <span class="notif-msg-actor">Submitted by ${actor}</span>
+                    </div>
+                `;
+            }
+
+            const normalized = noNote
+                .replace(/^\s*disubmit\s+oleh\s+/iu, 'Submitted by ')
+                .replace(/^\s*submit(?:ted)?\s+oleh\s+/iu, 'Submitted by ')
+                .replace(/^\s*disubmit\s+by\s+/iu, 'Submitted by ')
+                .replace(/^\s*submit(?:ted)?\s+by\s+/iu, 'Submitted by ')
+                .replace(/\boleh\b/iu, 'By');
+
+            const esc = escapeHtml(normalized)
+                .replace(/\bApproved\b/gi, '<span class="notif-pill notif-pill-approved">Approved</span>')
+                .replace(/\bRejected\b/gi, '<span class="notif-pill notif-pill-rejected">Rejected</span>');
+            return `<div class="notif-msg-note">${esc}</div>`;
         }
 
         function placeUnderButton(anchorBtn, floatingEl, maxWidthPx){
@@ -937,7 +1004,7 @@
         function positionNotif(){
             if(!btn || !panel) return;
             if(!isShown(panel)) return;
-            placeUnderButton(btn, panel, 360);
+            placeUnderButton(btn, panel, 760);
         }
 
         async function fetchPanel(){
@@ -973,12 +1040,11 @@
                             <div class="notif-main">
                                 <div class="notif-h">${escapeHtml(n.title || '-')}</div>
                                 <div class="notif-m">${renderMsg(n.message || '')}</div>
-                                <div class="notif-meta">
-                                    <span>${escapeHtml(n.created_at)}</span>
-                                    ${link ? `<a class="notif-open" href="${escapeHtml(link)}">Open</a>` : ``}
-                                </div>
                             </div>
-                            ${n.is_read ? `` : `<button class="notif-readbtn" data-read="${n.id}">Read</button>`}
+                            <div class="notif-side">
+                                <span class="notif-meta">${escapeHtml(n.created_at)}</span>
+                                ${link ? `<a class="notif-open" data-open-id="${n.id}" href="${escapeHtml(link)}">Open</a>` : ``}
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -988,16 +1054,36 @@
         }
 
         async function markRead(id){
+            if (!id) return;
+            if (pendingReadIds.has(id)) return;
+            pendingReadIds.add(id);
+            const row = body ? body.querySelector(`.notif-item[data-id="${id}"]`) : null;
+            const wasUnread = row ? row.classList.contains('unread') : false;
+            if (row && wasUnread) {
+                row.classList.remove('unread');
+                row.classList.add('read');
+                const dot = row.querySelector('.notif-dot');
+                if (dot) dot.style.background = '#cbd5e1';
+                if (badge) {
+                    const cur = Number(badge.textContent || 0);
+                    const next = Math.max(0, cur - 1);
+                    badge.textContent = String(next);
+                    badge.style.display = next > 0 ? 'flex' : 'none';
+                }
+            }
             try{
                 await fetch("{{ url('/inbox') }}/" + id + "/read-json", {
                     method: "POST",
                     headers: {
                         "X-CSRF-TOKEN": token,
                         "X-Requested-With": "XMLHttpRequest"
-                    }
+                    },
+                    keepalive: true
                 });
-                await fetchPanel();
-            } catch(e) {}
+            } catch(e) {
+            } finally {
+                pendingReadIds.delete(id);
+            }
         }
 
         function closePanel(){
@@ -1039,8 +1125,10 @@
 
         if(body){
             body.addEventListener('click', (e) => {
-                const id = e.target.getAttribute('data-read');
-                if(id) markRead(id);
+                const openLink = e.target.closest('a.notif-open[data-open-id]');
+                if (!openLink) return;
+                const id = Number(openLink.getAttribute('data-open-id') || 0);
+                if (id) markRead(id);
             });
         }
 
@@ -1112,6 +1200,115 @@
         window.addEventListener('scroll',  () => requestAnimationFrame(positionSettings), true);
     })();
     </script>
+
+
+    {{-- PWA: Register service worker for install + offline support --}}
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .catch(function() {});
+    }
+    </script>
+
+    @if((bool) config('ccr_notifications.web_push_enabled', false))
+    <script>
+    (function () {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+            return;
+        }
+
+        const publicKey = @json((string) config('ccr_notifications.web_push_public_key', ''));
+        if (!publicKey) {
+            return;
+        }
+
+        const subscribeUrl = @json(route('notifications.webpush.subscribe'));
+        const unsubscribeUrl = @json(route('notifications.webpush.unsubscribe'));
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const promptKey = 'ccr:webpush:prompted_at:v1';
+        const promptIntervalMs = 14 * 24 * 60 * 60 * 1000;
+
+        function b64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const raw = window.atob(base64);
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+            return out;
+        }
+
+        async function postJson(url, payload) {
+            return fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload || {}),
+            });
+        }
+
+        async function subscribe(registration) {
+            const existing = await registration.pushManager.getSubscription();
+            const subscription = existing || await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: b64ToUint8Array(publicKey),
+            });
+
+            await postJson(subscribeUrl, {
+                subscription: subscription.toJSON(),
+                user_agent: navigator.userAgent || '',
+            });
+        }
+
+        async function run() {
+            try {
+                const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+
+                if (Notification.permission === 'granted') {
+                    await subscribe(registration);
+                    return;
+                }
+
+                if (Notification.permission === 'denied') {
+                    return;
+                }
+
+                const now = Date.now();
+                const promptedAt = Number(localStorage.getItem(promptKey) || 0);
+                if (promptedAt > 0 && (now - promptedAt) < promptIntervalMs) {
+                    return;
+                }
+
+                localStorage.setItem(promptKey, String(now));
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    await subscribe(registration);
+                    return;
+                }
+
+                if (permission === 'denied') {
+                    const oldSub = await registration.pushManager.getSubscription();
+                    if (oldSub) {
+                        await postJson(unsubscribeUrl, { endpoint: oldSub.endpoint || '' });
+                    }
+                }
+            } catch (error) {
+                console.debug('Web push registration skipped:', error);
+            }
+        }
+
+        if (document.readyState === 'complete') {
+            setTimeout(run, 1200);
+        } else {
+            window.addEventListener('load', () => setTimeout(run, 1200), { once: true });
+        }
+    })();
+    </script>
+    @endif
     @endif
     @endauth
 

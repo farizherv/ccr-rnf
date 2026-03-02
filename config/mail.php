@@ -39,14 +39,21 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            'scheme' => env('MAIL_SCHEME', 'smtp'),
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => (int) env('MAIL_TIMEOUT', 15),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'stream' => [
+                'ssl' => [
+                    'verify_peer' => filter_var(env('MAIL_TLS_VERIFY_PEER', true), FILTER_VALIDATE_BOOLEAN),
+                    'verify_peer_name' => filter_var(env('MAIL_TLS_VERIFY_PEER_NAME', true), FILTER_VALIDATE_BOOLEAN),
+                    'allow_self_signed' => filter_var(env('MAIL_TLS_ALLOW_SELF_SIGNED', false), FILTER_VALIDATE_BOOLEAN),
+                ],
+            ],
         ],
 
         'ses' => [

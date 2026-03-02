@@ -3,11 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CcrReport;
-use App\Models\CcrItem;
-use App\Models\CcrPhoto;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-
+use Illuminate\Database\Eloquent\Builder;
 
 class CcrReportController extends Controller
 {
@@ -16,159 +12,90 @@ class CcrReportController extends Controller
     // =====================================================================
     public function index()
     {
-        $reports = CcrReport::latest()->get();
-        return view('ccr.index', compact('reports'));
-    }
-
-
-    // =====================================================================
-    // HALAMAN EDIT MENU (PILIH ENGINE ATAU SEAT)
-    // =====================================================================
-    public function editMenu()
-    {
-        return view('ccr.edit-menu');
+        // Halaman menu tidak butuh data report; hindari query besar yang sia-sia.
+        return view('ccr.index');
     }
 
     // LIST CCR ENGINE UNTUK DI EDIT
     public function editEngineList()
     {
-        $reports = CcrReport::where('group_folder', 'Engine')
-            ->whereNull('deleted_at')
-            ->orderBy('inspection_date', 'desc')
-            ->get();
+        [$reports, $customers, $statusStats] = $this->buildManageListPayload(
+            CcrReport::query()->where('group_folder', 'Engine'),
+            includeUnit: false
+        );
 
-        return view('ccr.manage-engine', compact('reports'));
+        return view('ccr.manage-engine', compact('reports', 'customers', 'statusStats'));
     }
 
     // LIST CCR OPERATOR SEAT UNTUK DI EDIT
     public function editSeatList()
     {
-        $reports = CcrReport::where('group_folder', 'Operator Seat')
-            ->whereNull('deleted_at')
-            ->orderBy('inspection_date', 'desc')
-            ->get();
+        [$reports, $customers, $statusStats] = $this->buildManageListPayload(
+            CcrReport::query()->where('group_folder', 'Operator Seat'),
+            includeUnit: true
+        );
 
-        return view('ccr.manage-seat', compact('reports'));
+        return view('ccr.manage-seat', compact('reports', 'customers', 'statusStats'));
     }
 
-
-    // =====================================================================
-    // HALAMAN CREATE (TIDAK DIPAKAI)
-    // =====================================================================
-    public function create()
+    private function buildManageListPayload(Builder $baseQuery, bool $includeUnit = false): array
     {
-        $groupFolders = [
-            'Engine',
-            'Transmission',
-            'Operator Seat',
-            'Radiator',
-            'After Cooler',
+        $baseQuery = $baseQuery->whereNull('deleted_at');
+
+        $totalReports = (clone $baseQuery)->count();
+        $draftReports = (clone $baseQuery)
+            ->where(function (Builder $query) {
+                $query->whereNull('approval_status')->orWhere('approval_status', 'draft');
+            })
+            ->count();
+        $reviewReports = (clone $baseQuery)
+            ->whereIn('approval_status', ['waiting', 'in_review'])
+            ->count();
+        $approvedReports = (clone $baseQuery)->where('approval_status', 'approved')->count();
+        $rejectedReports = (clone $baseQuery)->where('approval_status', 'rejected')->count();
+
+        $statusStats = [
+            'total' => $totalReports,
+            'draft' => $draftReports,
+            'review' => $reviewReports,
+            'approved' => $approvedReports,
+            'rejected' => $rejectedReports,
         ];
 
-        return view('ccr.create', compact('groupFolders'));
-    }
+        $customers = (clone $baseQuery)
+            ->select('customer')
+            ->whereNotNull('customer')
+            ->where('customer', '<>', '')
+            ->orderBy('customer')
+            ->distinct()
+            ->limit(300)
+            ->pluck('customer')
+            ->values();
 
+        $columns = [
+            'id',
+            'component',
+            'customer',
+            'make',
+            'model',
+            'sn',
+            'inspection_date',
+            'updated_at',
+            'created_at',
+            'approval_status',
+            'director_note',
+        ];
 
-    // =====================================================================
-    // STORE ORIGINAL (TIDAK DIPAKAI)
-    // =====================================================================
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'group_folder'         => 'required',
-            'component'            => 'required',
-            'unit'                 => 'required',
-            'job_no'               => 'nullable',
-            'sn'                   => 'nullable',
-            'customer'             => 'nullable',
-            'make'                 => 'nullable',
-            'reff_wo'              => 'nullable',
-            'inspection_date'      => 'nullable|date',
-            'notes'                => 'nullable',
-
-            'items'                => 'required|array',
-            'items.*.description'  => 'nullable|string',
-            'items.*.photos.*'     => 'nullable|image',
-        ]);
-
-        $report = CcrReport::create([
-            'group_folder'    => $data['group_folder'],
-            'component'       => $data['component'],
-            'unit'            => $data['unit'],
-            'job_no'          => $data['job_no'] ?? null,
-            'sn'              => $data['sn'] ?? null,
-            'customer'        => $data['customer'] ?? null,
-            'make'            => $data['make'] ?? null,
-            'reff_wo'         => $data['reff_wo'] ?? null,
-            'inspection_date' => $data['inspection_date'] ?? null,
-            'notes'           => $data['notes'] ?? null,
-        ]);
-
-        foreach ($request->items as $i => $itemData) {
-
-            $desc   = $itemData['description'] ?? null;
-            $photos = $request->file("items.$i.photos") ?? [];
-
-            if (!$desc && empty($photos)) continue;
-
-            $item = CcrItem::create([
-                'ccr_report_id' => $report->id,
-                'description'   => $desc,
-            ]);
-
-            foreach ($photos as $img) {
-                $path = $img->store('ccr_photos', 'public');
-
-                CcrPhoto::create([
-                    'ccr_item_id' => $item->id,
-                    'path'        => $path,
-                ]);
-            }
+        if ($includeUnit) {
+            $columns[] = 'unit';
         }
 
-        return redirect()
-            ->route('ccr.show', $report->id)
-            ->with('success', 'CCR berhasil disimpan!');
+        $reports = (clone $baseQuery)
+            ->select($columns)
+            ->orderByDesc('created_at')
+            ->simplePaginate(50)
+            ->withQueryString();
+
+        return [$reports, $customers, $statusStats];
     }
-
-
-    // =====================================================================
-    // SHOW DETAIL CCR
-    // =====================================================================
-    public function show(CcrReport $report)
-    {
-        $report->load('items.photos');
-        return view('ccr.show', compact('report'));
-    }
-
-    //CENTANGFILE
-    public function deleteMultipleEngine(Request $request)
-    {
-    $ids = $request->ids ?? [];
-
-    if (empty($ids)) {
-        return redirect()->back()->with('error', 'Tidak ada laporan yang dipilih.');
-    }
-
-    foreach ($ids as $id) {
-        $report = CcrReport::with('items.photos')->find($id);
-        if (!$report) continue;
-
-        // Hapus semua foto & item
-        foreach ($report->items as $item) {
-            foreach ($item->photos as $photo) {
-                Storage::disk('public')->delete($photo->path);
-                $photo->delete();
-            }
-            $item->delete();
-        }
-
-        // Hapus report
-        $report->delete();
-    }
-
-    return redirect()->route('ccr.manage.engine')
-        ->with('success', 'Laporan terpilih berhasil dihapus!');
-    }
-
 }

@@ -9,6 +9,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   // =========================================================
   $reportObj = $report ?? null;
   $reportId  = $reportObj?->id;
+  $initialPayloadRev = $reportObj ? max(0, (int) ($reportObj->parts_payload_rev ?? 0)) : 0;
 
   $payload = $reportObj ? ($reportObj->parts_payload ?? []) : [];
 
@@ -17,16 +18,25 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     $decoded = json_decode($payload, true);
     if (is_array($decoded)) $payload = $decoded;
   }
+  $draftSeedPartsPayload = (isset($draftSeedPartsPayload) && is_array($draftSeedPartsPayload))
+    ? $draftSeedPartsPayload
+    : [];
+  $skipLocalDraftLoad = isset($skipLocalDraftLoad) ? (bool) $skipLocalDraftLoad : false;
+  if (!$reportObj && empty($payload) && !empty($draftSeedPartsPayload)) {
+    $payload = $draftSeedPartsPayload;
+  }
   if (!is_array($payload)) $payload = [];
 
   // data utama
   $rows   = $payload['rows'] ?? [];
   $styles = $payload['styles'] ?? [];
   $notes  = $payload['notes'] ?? [];
+  $tools  = $payload['tools'] ?? [];
 
   if (!is_array($rows))   $rows = [];
   if (!is_array($styles)) $styles = [];
   if (!is_array($notes))  $notes = [];
+  if (!is_array($tools))  $tools = [];
 
   // kompatibilitas nama lama
   $parts = $rows;
@@ -51,6 +61,17 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
 
   $footerTotalMode    = $meta['footer_total_mode'] ?? '';     // 'manual' | 'auto' | ''
   $footerExtendedMode = $meta['footer_extended_mode'] ?? '';  // 'manual' | 'auto' | ''
+  $initialPayloadTs = 0;
+  foreach ([$payload['ts'] ?? null, $meta['ts'] ?? null, $meta['saved_at_ts'] ?? null] as $candidateTs) {
+    if ($candidateTs === null) continue;
+    if (is_numeric($candidateTs)) {
+      $ts = (int) $candidateTs;
+      if ($ts > 0) {
+        $initialPayloadTs = $ts;
+        break;
+      }
+    }
+  }
 
   // template meta (Opsi A)
   $initialTemplateKey     = $meta['template_key'] ?? 'engine_blank';
@@ -168,6 +189,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
         initialRows: @js($rows),
         initialStyles: @js($styles),
         initialNotes: @js($notes),
+        initialTools: @js($tools),
+        initialPayloadTs: @js($initialPayloadTs),
         initialNoUnit: @js($noUnit),
 
         initialFooterTotal: @js($footerTotal),
@@ -189,14 +212,19 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
         storageKey: @js($storageKey),
         userId: @js($userId),
         templateRememberKey: @js($templateRememberKey),
+        skipLocalDraftLoad: @js($skipLocalDraftLoad),
 
         reportId: @js($reportId),
+        initialPayloadRev: @js($initialPayloadRev),
         autosaveUrl: @js($autosaveUrl),
         csrf: @js(csrf_token()),
      })"
      class="box ws-shell"
      :class="isFs ? 'ws-shell--fs' : ''"
-     @keydown.capture="onKey($event)">
+     @keydown.capture="onKey($event)"
+     @copy.capture="onClipCopy($event)"
+     @cut.capture="onClipCut($event)"
+     @paste.capture="onClipPaste($event)">
 
   <h3 class="ws-title" style="margin-bottom:6px;">Parts &amp; Labour Worksheet</h3>
   <p class="ws-desc" style="font-size:13px; color:#64748b; margin-bottom:14px;">
@@ -218,6 +246,12 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
         <span class="ws-chip__v" x-text="templateName()"></span>
         <span class="ws-chip__caret">▾</span>
       </button>
+
+      <div class="ws-rowsinfo">Current: <b x-text="rows.length"></b></div>
+
+      <span class="ws-divider ws-divider--top">|</span>
+
+      <div class="ws-cellinfo">Cell: <b x-text="cellLabel()"></b></div>
     </div>
 
     <div class="ws-topbar__right">
@@ -234,30 +268,10 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     </div>
   </div>
 
-  {{-- ACTION BUTTONS --}}
-  <div class="ws-actions">
-    <button type="button" class="ws-btn ws-btn--primary" @click="addRow()">
-      + Tambah Baris
-    </button>
-
-    <button type="button" class="ws-btn ws-btn--danger" @click="deleteLast()">
-      Hapus Terakhir
-    </button>
-
-    <button type="button" class="ws-btn ws-btn--danger2"
-            @click="deleteSelectedRow()">
-      Hapus Terpilih
-    </button>
-
-    <div class="ws-tip">
-      Enter → kanan • Tab/Shift+Tab → kanan/kiri • Arrow ↑↓←→ → pindah cell
-    </div>
-  </div>
-
   {{-- SUB BAR --}}
   <div class="ws-subbar">
     <div class="ws-subbar__left">
-      <div class="ws-field">
+      <div class="ws-field ws-field--unit">
         <label>No. Unit</label>
         <input class="ws-input"
                x-model="noUnit"
@@ -265,25 +279,25 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
                placeholder="Contoh: LT-S019">
       </div>
 
-      <div class="ws-field ws-field--rows">
-        <label>Rows</label>
-        <input class="ws-input ws-input--rows"
-               inputmode="numeric"
-               x-model="rowsTarget"
-               @input="rowsTarget = onlyDigits(rowsTarget)"
-               @change="applyRowsTarget()"
-               @keydown.enter.prevent="applyRowsTarget()"
-               placeholder="20">
-      </div>
+      <div class="ws-actions ws-actions--inline">
+        <button type="button" class="ws-btn ws-btn--primary" @click="addRow()">
+          + Tambah Baris
+        </button>
 
-      <div class="ws-rowsinfo">
-        Current: <b x-text="rows.length"></b>
-      </div>
+        <button type="button"
+                class="ws-btn ws-btn--danger"
+                :disabled="!canDeleteLastRow()"
+                @click="deleteLast()">
+          Hapus Terakhir
+        </button>
 
-      <div class="ws-divider">|</div>
-
-      <div class="ws-cellinfo">
-        Cell: <b x-text="cellLabel()"></b>
+        <button type="button"
+                class="ws-btn"
+                :class="canDeleteSelectedRows() ? 'ws-btn--danger2' : 'ws-btn--muted'"
+                :disabled="!canDeleteSelectedRows()"
+                @click="deleteSelectedRow()">
+          Hapus Terpilih
+        </button>
       </div>
     </div>
 
@@ -424,7 +438,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
         </div>
 
         {{-- NOTE --}}
-        <div class="ws-pop" @click.outside="noteOpen=false">
+        <div class="ws-pop" @click.outside="commitOpenNote({ close: true })">
           <button type="button" class="ws-tool"
                   :class="hasNote(activeKey()) ? 'is-on' : ''"
                   @click="toggleNotePopover(); fontOpen=false; fillOpen=false">
@@ -439,7 +453,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
             <div class="ws-note-actions">
               <button type="button" class="ws-pop-action" @click="saveNote()">Save</button>
               <button type="button" class="ws-pop-action" @click="removeNote()">Remove</button>
-              <button type="button" class="ws-pop-action" @click="noteOpen=false">Close</button>
+              <button type="button" class="ws-pop-action" @click="commitOpenNote({ close: true })">Close</button>
             </div>
             <div class="ws-pop-sub" style="margin-top:8px;">
               Tip: Ctrl+M untuk buka note di cell aktif.
@@ -507,18 +521,17 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
 
           <tbody>
             <template x-for="(r, i) in rows" :key="r._id">
-              <tr>
+              <tr :class="isRowSelected(i) ? 'ws-row-selected' : ''">
                 {{-- A --}}
                 <td>
                   <div class="ws-box ws-box--no ws-cell"
                        tabindex="0"
-                       :class="cellClass(i,0)"
+                       :class="[cellClass(i,0), isRowSelected(i) ? 'ws-box--no-selected' : '']"
                        :style="cellStyle(i,0)"
                        data-cell="1" :data-row="i" data-col="0"
                        @focus="setActive(i,0,true)"
-                       @mousedown="onCellMouseDown($event,i,0)"
-                       @mouseenter="onCellMouseEnter($event,i,0)"
-                       @click="$event.currentTarget.focus()">
+                       @mousedown.stop
+                       @click.prevent.stop="toggleRowSelection(i)">
                     <span x-text="i+1"></span>
                   </div>
                 </td>
@@ -812,7 +825,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   </div>
 
   {{-- hidden JSON payload --}}
-  <input type="hidden" name="parts_payload" :value="jsonPayload()">
+  <input type="hidden" name="parts_payload" x-ref="partsPayloadInput" :value="jsonPayload()">
+  <input type="hidden" name="parts_payload_rev" x-ref="partsPayloadRevInput" :value="payloadRev">
 </div>
 
 <style>
@@ -893,12 +907,16 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   .ws-chip__k{font-size:12px;color:#64748b;}
   .ws-chip__v{font-size:12px;color:#0f172a;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ws-chip__caret{color:#94a3b8;font-weight:900;}
+  .ws-topmeta{display:flex;align-items:center;gap:8px;}
+  .ws-topmeta__label{font-size:12px;color:#334155;font-weight:900;}
+  .ws-input--rows-top{min-width:110px !important;}
 
   /* ===== ACTIONS ===== */
   .ws-actions{
     display:flex;gap:10px;flex-wrap:wrap;align-items:center;
     margin:2px 0 4px 0;
   }
+  .ws-actions--inline{margin-left:6px;}
   .ws-btn{
     height:42px; padding:0 16px; border-radius:14px;
     border:1px solid #cbd5e1; background:#fff;
@@ -907,6 +925,8 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   .ws-btn--primary{background:#2563eb;border-color:#2563eb;color:#fff;}
   .ws-btn--danger{background:#ef4444;border-color:#ef4444;color:#fff;}
   .ws-btn--danger2{background:#dc2626;border-color:#dc2626;color:#fff;}
+  .ws-btn--muted{background:#f8fafc;border-color:#cbd5e1;color:#9ca3af;}
+  .ws-btn--muted:disabled{opacity:1;cursor:not-allowed;}
   .ws-tip{font-size:12px;color:#64748b;font-weight:800;}
 
   /* ===== SUB BAR ===== */
@@ -922,9 +942,11 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   .ws-field label{font-weight:900;font-size:13px;color:#334155;}
   .ws-input{height:40px;border:1px solid #cbd5e1;border-radius:12px;padding:0 12px;min-width:260px;background:#fff;}
   .ws-field--rows .ws-input{min-width:120px;}
+  .ws-field--unit .ws-input{min-width:360px;}
   .ws-input--rows{text-align:center;font-weight:900;}
   .ws-rowsinfo,.ws-cellinfo{font-size:12px;color:#334155;font-weight:800; padding-bottom:4px;}
   .ws-divider{font-weight:900;color:#94a3b8; padding-bottom:4px;}
+  .ws-subbar .ws-actions{margin:0;}
 
   /* ===== TOOLS ===== */
   .ws-tools{
@@ -1002,7 +1024,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     -webkit-overflow-scrolling: touch;
   }
 
-  .ws-zoomTarget{transform-origin:0 0; display:inline-block;}
+  .ws-zoomTarget{transform-origin:0 0; display:block; min-width:100%;}
 
   .ws-table{
     border-collapse:collapse;
@@ -1054,6 +1076,7 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
   .ws-table thead th::after{content:" ▾";opacity:.85;font-weight:900;}
   .ws-table td{border-top:1px solid #eef2f7;border-right:1px solid #f1f5f9;padding:8px;background:#fff;}
   .ws-table tbody tr:focus-within td{background:#eff6ff;}
+  .ws-table tbody tr.ws-row-selected td{background:#eaf2ff;}
 
   /* footer row sticky bottom */
   .ws-table tfoot td{
@@ -1108,6 +1131,11 @@ File: resources/views/engine/partials/parts_worksheet.blade.php
     box-shadow:0 0 0 3px rgba(34,197,94,.18);
   }
   .ws-box--no{justify-content:center;font-weight:900;}
+  .ws-box--no-selected{
+    background:#2563eb !important;
+    border-color:#2563eb !important;
+    color:#fff !important;
+  }
 
   /* money */
   .money{position:relative;display:flex;align-items:center;}
@@ -1219,6 +1247,8 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('partsWS', (cfg) => ({
     storageKey: cfg.storageKey || ('ccr_parts_ws_' + window.location.pathname),
     reportId: cfg.reportId || null,
+    payloadRev: Number(cfg.initialPayloadRev || 0),
+    payloadTs: Number(cfg.initialPayloadTs || 0),
     autosaveUrl: cfg.autosaveUrl || '',
     csrf: cfg.csrf || (document.querySelector('meta[name=csrf-token]')?.content || ''),
     _saveSeq: 0,
@@ -1253,6 +1283,7 @@ document.addEventListener('alpine:init', () => {
     // remember template
     userId: cfg.userId || 0,
     templateRememberKey: cfg.templateRememberKey || ('ccr_engine_last_template_u' + (cfg.userId || 0)),
+    skipLocalDraftLoad: !!cfg.skipLocalDraftLoad,
 
     // template modal state
     tpl: { open:false, q:'', filtered:[], selectedKey:'', needConfirm:false },
@@ -1261,11 +1292,18 @@ document.addEventListener('alpine:init', () => {
     rows: [],
     styles: {},
     notes: {},
+    tools: {},
 
     // selection
     sel: null,
     anchor: null,
     dragging: false,
+    rowSelected: {},
+    _clipboard: null,
+    _colFields: ['_no','qty','uom','part_number','part_description','part_section','purchase_price','total','sales_price','extended_price'],
+    _skipFocusReset: false,
+    _undoStack: [],
+    _maxUndo: 50,
 
     // view
     zoom: 90,
@@ -1275,6 +1313,7 @@ document.addEventListener('alpine:init', () => {
     // autosave
     saveStatus: 'Auto-saved --:--:--',
     _tSave: null,
+    _fmtSyncTimer: null,
 
     // active cell
     activeRow: 0,
@@ -1304,7 +1343,8 @@ document.addEventListener('alpine:init', () => {
           (d.meta && typeof d.meta === 'object') ||
           (Array.isArray(d.rows) && d.rows.length) ||
           (d.styles && typeof d.styles === 'object' && Object.keys(d.styles).length) ||
-          (d.notes  && typeof d.notes  === 'object' && Object.keys(d.notes).length)
+          (d.notes  && typeof d.notes  === 'object' && Object.keys(d.notes).length) ||
+          (d.tools  && typeof d.tools  === 'object' && Object.keys(d.tools).length)
         )
       );
     },
@@ -1316,6 +1356,48 @@ document.addEventListener('alpine:init', () => {
       if (!Number.isFinite(n) || n <= 0) n = 100;
       n = Math.max(1, Math.min(500, n));
       return n;
+    },
+    readTs(raw){
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) return 0;
+      return Math.floor(n);
+    },
+    serverPayloadWatermark(){
+      const ts = this.readTs(this.payloadTs);
+      const rev = this.readTs(this.payloadRev);
+      return Math.max(ts, rev);
+    },
+    isDraftNewerThanServer(draft){
+      if (!draft || typeof draft !== 'object') return false;
+      const draftTs = this.readTs(draft.ts ?? draft?.meta?.ts ?? draft?.meta?.saved_at_ts);
+      const serverTs = this.serverPayloadWatermark();
+      if (draftTs <= 0) return false;
+      if (serverTs <= 0) return true;
+      return draftTs > serverTs;
+    },
+    touchTools(kind, extra = {}){
+      const base = (this.tools && typeof this.tools === 'object') ? this.tools : {};
+      const patch = (extra && typeof extra === 'object') ? extra : {};
+      const range = this.selectedRange();
+      const selectedRange = range
+        ? { r1: range.r1, r2: range.r2, c1: range.c1, c2: range.c2 }
+        : null;
+      this.tools = {
+        ...base,
+        ...patch,
+        last_action: String(kind || ''),
+        last_action_at: Date.now(),
+        last_cell: this.activeKey(),
+        selected_range: Object.prototype.hasOwnProperty.call(patch, 'selected_range')
+          ? patch.selected_range
+          : selectedRange,
+      };
+    },
+    queueFormattingSync(){
+      clearTimeout(this._fmtSyncTimer);
+      this._fmtSyncTimer = setTimeout(() => {
+        this.flushPendingSave(true);
+      }, 140);
     },
     padRowsTo(want){
       want = Math.max(1, Math.min(500, parseInt(String(want || ''), 10) || 100));
@@ -1355,13 +1437,14 @@ document.addEventListener('alpine:init', () => {
       this.footerTotalManual = (ftMode === 'manual');
       this.footerExtendedManual = (feMode === 'manual');
 
-      const d = this.loadDraft();
+      const d = this.skipLocalDraftLoad ? null : this.loadDraft();
       const hasUsableDraft = this.isUsableDraft(d);
 
       const dbHasAny = !!(
         (Array.isArray(cfg.initialRows) && cfg.initialRows.length) ||
         (cfg.initialStyles && typeof cfg.initialStyles === 'object' && Object.keys(cfg.initialStyles).length) ||
         (cfg.initialNotes  && typeof cfg.initialNotes  === 'object' && Object.keys(cfg.initialNotes).length) ||
+        (cfg.initialTools  && typeof cfg.initialTools  === 'object' && Object.keys(cfg.initialTools).length) ||
         String(cfg.initialNoUnit||'').trim() ||
         String(cfg.initialFooterTotal||'').trim() ||
         String(cfg.initialFooterExtended||'').trim()
@@ -1379,6 +1462,7 @@ document.addEventListener('alpine:init', () => {
         this.rows   = (Array.isArray(cfg.initialRows) ? cfg.initialRows : []).map(r => this.makeRow(r));
         this.styles = (cfg.initialStyles && typeof cfg.initialStyles === 'object') ? cfg.initialStyles : {};
         this.notes  = (cfg.initialNotes  && typeof cfg.initialNotes  === 'object') ? cfg.initialNotes  : {};
+        this.tools  = (cfg.initialTools  && typeof cfg.initialTools  === 'object') ? cfg.initialTools  : {};
 
         // ✅ rows_count dari META SERVER (bukan draft)
         const want = this.readRowsCount(cfgMeta, this.rows.length || 100);
@@ -1392,6 +1476,7 @@ document.addEventListener('alpine:init', () => {
         this.rows   = (Array.isArray(d.rows) ? d.rows : []).map(r => this.makeRow(r));
         this.styles = (d.styles && typeof d.styles === 'object') ? d.styles : {};
         this.notes  = (d.notes  && typeof d.notes  === 'object') ? d.notes  : {};
+        this.tools  = (d.tools  && typeof d.tools  === 'object') ? d.tools  : this.tools;
 
         const want = this.readRowsCount(d.meta || {}, this.rows.length || 100);
         this.padRowsTo(Math.max(this.rows.length || 0, want));
@@ -1401,11 +1486,17 @@ document.addEventListener('alpine:init', () => {
           : ('Auto-saved ' + this.formatTime(new Date()));
       };
 
+      let recoveredDraftToServer = false;
       if (this.reportId) {
-        // EDIT: selalu prefer DB
+        // EDIT: selalu prioritaskan payload DB agar style/note yang sudah tersimpan
+        // tidak tertimpa draft lokal yang timestamp-nya lebih baru tapi kontennya stale.
         applyFromCfg();
-        // fallback draft cuma kalau DB benar2 kosong
-        if (!dbHasAny && hasUsableDraft) applyFromDraft();
+
+        // fallback draft hanya jika DB benar-benar kosong.
+        if (!dbHasAny && hasUsableDraft) {
+          applyFromDraft();
+          recoveredDraftToServer = true;
+        }
       } else {
         // CREATE: prefer draft
         if (hasUsableDraft) {
@@ -1439,10 +1530,23 @@ document.addEventListener('alpine:init', () => {
       this.$nextTick(() => {
         this.applyZoom();
         this.focusCell(0,1);
+        this.writePayloadInput();
+        if (recoveredDraftToServer && this.reportId) {
+          this.saveStatus = 'Recovered local draft, syncing...';
+          this.flushPendingSave(true);
+        }
       });
 
-      // autosave draft on leaving page
-      window.addEventListener('beforeunload', () => this.saveDraft(true));
+      // autosave draft on leaving page (with sendBeacon fallback for remote)
+      this._onBeforeUnload = () => this.flushOnLeave(true);
+      window.addEventListener('beforeunload', this._onBeforeUnload);
+      this._onPageHide = () => this.flushOnLeave(true);
+      window.addEventListener('pagehide', this._onPageHide);
+      this._onVisibilityChange = () => {
+        if (document.visibilityState !== 'hidden') return;
+        this.flushOnLeave(true);
+      };
+      document.addEventListener('visibilitychange', this._onVisibilityChange);
 
       // mouse drag selection safety
       this._onMouseUp = () => { this.dragging = false; };
@@ -1451,7 +1555,16 @@ document.addEventListener('alpine:init', () => {
       this._onMouseLeave = () => { this.dragging = false; };
       window.addEventListener('mouseleave', this._onMouseLeave);
 
+      this._onForceSave = () => {
+        this.flushPendingSave(true);
+      };
+      window.addEventListener('ccr:engine-force-save', this._onForceSave);
+
       this.bindClearOnSubmit();
+
+      if (!this.reportId) {
+        window.__engineCreateCollectPartsPayload = () => this.flushPendingSave(true);
+      }
     },
 
     bindClearOnSubmit(){
@@ -1460,6 +1573,7 @@ document.addEventListener('alpine:init', () => {
       form.__ccrPartsWsBound = true;
 
       form.addEventListener('submit', () => {
+        this.flushPendingSave(true);
         try { localStorage.removeItem(this.storageKey); } catch(e) {}
       });
     },
@@ -1517,7 +1631,8 @@ document.addEventListener('alpine:init', () => {
 
       const styles = (raw.styles && typeof raw.styles === 'object') ? raw.styles : {};
       const notes  = (raw.notes  && typeof raw.notes  === 'object') ? raw.notes  : {};
-      return { meta, rows, styles, notes };
+      const tools  = (raw.tools  && typeof raw.tools  === 'object') ? raw.tools  : {};
+      return { meta, rows, styles, notes, tools };
     },
 
     // ✅ JSON key bisa beda-beda: parts / parts_defaults / parts_payload ...
@@ -1622,6 +1737,7 @@ document.addEventListener('alpine:init', () => {
 
         this.styles = (def.styles && typeof def.styles === 'object') ? def.styles : {};
         this.notes  = (def.notes  && typeof def.notes  === 'object') ? def.notes  : {};
+        this.tools  = (def.tools  && typeof def.tools  === 'object') ? def.tools  : {};
 
         this.templateKey = key;
         this.templateVersion = t ? (t.version || '') : '';
@@ -1957,10 +2073,45 @@ document.addEventListener('alpine:init', () => {
       this.onChanged();
       this.$nextTick(() => this.focusCell(this.rows.length-1, 1));
     },
-    deleteLast() {
-      if (this.rows.length <= 1) return;
+    clearRowSelections() {
+      this.rowSelected = {};
+    },
+    isRowSelected(idx) {
+      return !!(this.rowSelected && this.rowSelected[idx]);
+    },
+    toggleRowSelection(idx) {
+      const i = parseInt(idx, 10);
+      if (!Number.isFinite(i) || i < 0 || i >= this.rows.length) return;
+      if (this.rowSelected[i]) delete this.rowSelected[i];
+      else this.rowSelected[i] = true;
+      this.setActive(i, 0, false);
+    },
+    selectedRowIndexes() {
+      const out = [];
+      for (const k in (this.rowSelected || {})) {
+        const idx = parseInt(k, 10);
+        if (!Number.isFinite(idx)) continue;
+        if (!this.rowSelected[k]) continue;
+        if (idx < 0 || idx >= this.rows.length) continue;
+        out.push(idx);
+      }
+      out.sort((a, b) => a - b);
+      return out;
+    },
+    selectedRowsCount() {
+      return this.selectedRowIndexes().length;
+    },
+    canDeleteSelectedRows() {
+      const count = this.selectedRowsCount();
+      return this.rows.length > 1 && count > 0 && (this.rows.length - count) >= 1;
+    },
+    canDeleteLastRow() {
+      if (this.rows.length <= 1) return false;
       const lastNE = this.lastNonEmptyIndex();
-      if (this.rows.length - 1 <= lastNE) return;
+      return (this.rows.length - 1) > lastNE;
+    },
+    deleteLast() {
+      if (!this.canDeleteLastRow()) return;
 
       const lastIndex = this.rows.length - 1;
       this.deleteRowStyles(lastIndex);
@@ -1971,15 +2122,23 @@ document.addEventListener('alpine:init', () => {
       this.updateAutoFooters();
       this.onChanged();
       this.sel = null;
+      this.anchor = null;
+      this.clearRowSelections();
     },
     deleteSelectedRow() {
-      const idx = this.activeRow;
-      if (idx === null || idx === undefined) return;
-      if (this.rows.length <= 1) return;
+      if (!this.canDeleteSelectedRows()) return;
+      const idxs = this.selectedRowIndexes();
+      if (!idxs.length) return;
 
-      this.rows.splice(idx, 1);
-      this.shiftStylesAfterDelete(idx);
-      this.shiftNotesAfterDelete(idx);
+      const deleteCount = idxs.length;
+      if (this.rows.length - deleteCount < 1) return;
+
+      const desc = idxs.slice().sort((a, b) => b - a);
+      for (const ri of desc) {
+        this.rows.splice(ri, 1);
+        this.shiftStylesAfterDelete(ri);
+        this.shiftNotesAfterDelete(ri);
+      }
 
       if (this.rows.length === 0) this.rows.push(this.makeRow({}));
       this.rowsTarget = String(this.rows.length);
@@ -1987,8 +2146,11 @@ document.addEventListener('alpine:init', () => {
       this.updateAutoFooters();
       this.onChanged();
       this.sel = null;
+      this.anchor = null;
+      this.clearRowSelections();
 
-      this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 9)));
+      const next = Math.max(0, Math.min((idxs[0] ?? 0), this.rows.length - 1));
+      this.$nextTick(() => this.focusCell(next, 0));
     },
 
     applyRowsTarget() {
@@ -2009,6 +2171,8 @@ document.addEventListener('alpine:init', () => {
       this.updateAutoFooters();
       this.onChanged();
       this.sel = null;
+      this.anchor = null;
+      this.clearRowSelections();
       this.$nextTick(() => this.focusCell(Math.min(this.activeRow, this.rows.length-1), Math.min(this.activeCol, 9)));
     },
 
@@ -2071,27 +2235,37 @@ document.addEventListener('alpine:init', () => {
       const allOn = keys.every(k => !!(this.styles[k] && this.styles[k][prop]));
       const next = !allOn;
       keys.forEach(k => { const s = this.ensureStyleKey(k); s[prop] = next; this.cleanupStyle(k); });
+      this.touchTools('format_toggle', { format_prop: prop, format_value: !!next });
       this.onChanged();
+      this.queueFormattingSync();
     },
     setAlign(val){
       const keys = this.iterSelectedKeys();
       keys.forEach(k => { const s = this.ensureStyleKey(k); s.align = val; this.cleanupStyle(k); });
+      this.touchTools('align', { align: String(val || '') });
       this.onChanged();
+      this.queueFormattingSync();
     },
     setFontColor(hex){
       const keys = this.iterSelectedKeys();
       keys.forEach(k => { const s = this.ensureStyleKey(k); s.color = (hex || ''); this.cleanupStyle(k); });
+      this.touchTools('font_color', { font_color: String(hex || '') });
       this.onChanged();
+      this.queueFormattingSync();
     },
     setFill(hex){
       const keys = this.iterSelectedKeys();
       keys.forEach(k => { const s = this.ensureStyleKey(k); s.bg = (hex || ''); this.cleanupStyle(k); });
+      this.touchTools('fill_color', { fill_color: String(hex || '') });
       this.onChanged();
+      this.queueFormattingSync();
     },
     clearFormat(){
       const keys = this.iterSelectedKeys();
       keys.forEach(k => { delete this.styles[k]; });
+      this.touchTools('clear_format');
       this.onChanged();
+      this.queueFormattingSync();
     },
     toolOn(name){
       const keys = this.iterSelectedKeys();
@@ -2126,25 +2300,54 @@ document.addEventListener('alpine:init', () => {
      * NOTES
      * ========================================================= */
     hasNote(k){ return !!(this.notes && this.notes[k] && String(this.notes[k]).trim()); },
-    toggleNotePopover(){
-      this.noteOpen = !this.noteOpen;
-      if (this.noteOpen) {
-        const k = this.activeKey();
-        this.noteText = this.notes[k] || '';
+    commitOpenNote(opts = {}){
+      const close = !!opts.close;
+      const silent = !!opts.silent;
+      const force = !!opts.force;
+      if (!force && !this.noteOpen) {
+        if (close) this.noteOpen = false;
+        return false;
       }
-    },
-    saveNote(){
+
       const k = this.activeKey();
       const t = String(this.noteText || '').trim();
-      if (!t) delete this.notes[k];
-      else this.notes[k] = t;
-      this.onChanged();
+      const hasExisting = Object.prototype.hasOwnProperty.call(this.notes || {}, k);
+      const prev = hasExisting ? String(this.notes[k] || '').trim() : '';
+      let changed = false;
+
+      if (!t) {
+        if (hasExisting) {
+          delete this.notes[k];
+          changed = true;
+        }
+      } else if (!hasExisting || prev !== t) {
+        this.notes[k] = t;
+        changed = true;
+      }
+
+      if (close) this.noteOpen = false;
+      if (changed && !silent) this.onChanged();
+      return changed;
+    },
+    toggleNotePopover(){
+      if (this.noteOpen) return this.commitOpenNote({ close: true });
+      this.noteOpen = true;
+      const k = this.activeKey();
+      this.noteText = this.notes[k] || '';
+    },
+    saveNote(){
+      const noteValue = String(this.noteText || '').trim();
+      this.touchTools(noteValue ? 'save_note' : 'remove_note', { note_text: noteValue });
+      const changed = this.commitOpenNote({ close: true });
+      if (changed) this.queueFormattingSync();
     },
     removeNote(){
       const k = this.activeKey();
       delete this.notes[k];
       this.noteText = '';
+      this.touchTools('remove_note', { note_text: '' });
       this.onChanged();
+      this.queueFormattingSync();
     },
     onHoverNote(e){
       const el = e.target?.closest?.('[data-cell="1"]');
@@ -2166,8 +2369,21 @@ document.addEventListener('alpine:init', () => {
      * ACTIVE / SELECTION
      * ========================================================= */
     setActive(r,c,resetSelection){
+      // Skip reset if triggered by focus after mousedown (which already handled selection)
+      if (resetSelection && this._skipFocusReset) {
+        this._skipFocusReset = false;
+        resetSelection = false;
+      }
+      const changedCell = (r !== this.activeRow || c !== this.activeCol);
+      if (this.noteOpen && changedCell) {
+        this.commitOpenNote({ silent: true });
+      }
       this.activeRow = r; this.activeCol = c;
       if (resetSelection) { this.anchor = {r,c}; this.sel = {ar:r, ac:c, br:r, bc:c}; }
+      if (this.noteOpen) {
+        const k = this.activeKey();
+        this.noteText = this.notes[k] || '';
+      }
     },
     cellLabel(){
       const letters = ['A','B','C','D','E','F','G','H','I','J'];
@@ -2196,6 +2412,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     onCellMouseDown(e, r, c){
+      this._skipFocusReset = true;
       if (e && e.shiftKey && this.anchor) {
         this.sel = { ar:this.anchor.r, ac:this.anchor.c, br:r, bc:c };
         this.setActive(r,c,false);
@@ -2262,6 +2479,23 @@ document.addEventListener('alpine:init', () => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) { e.preventDefault(); return this.toggleFmt('underline'); }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); this.noteOpen = true; this.noteText = this.notes[this.activeKey()] || ''; return; }
 
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        if (this.rows.length) {
+          this.anchor = {r:0, c:0};
+          this.sel = {ar:0, ac:0, br:this.rows.length-1, bc:9};
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); return this.undo(); }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.isMultiSel()) {
+          e.preventDefault();
+          return this.clearSelectedCells();
+        }
+      }
+
       if (e.key === 'Enter') { e.preventDefault(); return this.moveRight(); }
       if (e.key === 'Tab') { e.preventDefault(); return e.shiftKey ? this.moveLeft() : this.moveRight(); }
 
@@ -2269,6 +2503,223 @@ document.addEventListener('alpine:init', () => {
       if (e.key === 'ArrowUp') { e.preventDefault(); return this.moveUp(); }
       if (e.key === 'ArrowLeft') { e.preventDefault(); return this.moveLeft(); }
       if (e.key === 'ArrowRight') { e.preventDefault(); return this.moveRight(); }
+    },
+
+    /* =========================================================
+     * CLIPBOARD (EXCEL-LIKE COPY / CUT / PASTE)
+     * ========================================================= */
+    getCellValue(ri, ci) {
+      try {
+        if (ci === 0) return String(ri + 1);
+        if (ri < 0 || ri >= this.rows.length || ci < 0 || ci > 9) return '';
+        const field = this._colFields[ci];
+        if (!field) return '';
+        const row = this.rows[ri];
+        if (!row) return '';
+        if (ci === 6) return this.formatDots(row.purchase_price || '');
+        if (ci === 7) return this.formatDots(row.total || '');
+        if (ci === 8) return row.sales_price || '';
+        if (ci === 9) return this.formatDots(row.extended_price || '');
+        return String(row[field] ?? '');
+      } catch(_) { return ''; }
+    },
+
+    setCellValue(ri, ci, val) {
+      try {
+        if (ci === 0) return;
+        if (ri < 0 || ri >= this.rows.length || ci < 0 || ci > 9) return;
+        const row = this.rows[ri];
+        if (!row) return;
+        val = this.cleanText(String(val ?? ''));
+        const field = this._colFields[ci];
+        if (!field) return;
+
+        if (ci === 1) {
+          row.qty = this.onlyDigits(val);
+          this.recalcRow(ri, 'qty', true);
+          return;
+        }
+        if (ci === 6) {
+          row.purchase_price = this.onlyDigits(val);
+          this.recalcRow(ri, 'purchase', true);
+          return;
+        }
+        if (ci === 7) {
+          const d = this.onlyDigits(val);
+          if (d) { row.total = d; row.total_manual = true; }
+          else   { row.total_manual = false; this.recalcRow(ri, 'total_clear', true); }
+          return;
+        }
+        if (ci === 8) {
+          const raw = this.normalizeMoneyRaw(val);
+          row.sales_price_raw = raw;
+          row.sales_price = this.rawToRupiahDigits(raw);
+          this.recalcRow(ri, 'sales', true);
+          return;
+        }
+        if (ci === 9) {
+          const d = this.onlyDigits(val);
+          if (d) { row.extended_price = d; row.extended_manual = true; }
+          else   { row.extended_manual = false; this.recalcRow(ri, 'ext_clear', true); }
+          return;
+        }
+        row[field] = val;
+      } catch(_) {}
+    },
+
+    /* --- DELETE / CLEAR --- */
+    clearSelectedCells() {
+      this.pushUndo();
+      const s = this.selectedRange();
+      if (!s) return;
+      for (let r = s.r1; r <= s.r2; r++) {
+        for (let c = s.c1; c <= s.c2; c++) {
+          this.setCellValue(r, c, '');
+        }
+      }
+      this.updateAutoFooters();
+      this.onChanged();
+    },
+
+    /* --- UNDO --- */
+    pushUndo() {
+      try {
+        const snap = {
+          rows: JSON.parse(JSON.stringify(this.rows)),
+          styles: JSON.parse(JSON.stringify(this.styles)),
+          notes: JSON.parse(JSON.stringify(this.notes)),
+        };
+        this._undoStack.push(snap);
+        if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+      } catch(_) {}
+    },
+    undo() {
+      if (!this._undoStack.length) return;
+      const snap = this._undoStack.pop();
+      if (!snap) return;
+      this.rows = (Array.isArray(snap.rows) ? snap.rows : []).map(r => this.makeRow(r));
+      this.styles = (snap.styles && typeof snap.styles === 'object') ? snap.styles : {};
+      this.notes = (snap.notes && typeof snap.notes === 'object') ? snap.notes : {};
+      this.rows.forEach((_, i) => this.recalcRow(i, 'undo', true));
+      this.updateAutoFooters();
+      this.onChanged();
+    },
+
+    isMultiSel() {
+      if (!this.sel) return false;
+      const s = this.selectedRange();
+      if (!s) return false;
+      return (s.r1 !== s.r2 || s.c1 !== s.c2);
+    },
+
+    onClipCopy(e) {
+      try {
+        const ae = document.activeElement;
+        if (!ae || !this.$el.contains(ae)) return;
+        if (!this.isMultiSel()) return;
+        e.preventDefault();
+
+        const s = this.selectedRange();
+        const lines = [];
+        const clipData = [];
+        const clipStyles = [];
+
+        for (let r = s.r1; r <= s.r2; r++) {
+          const rv = [], rs = [];
+          for (let c = s.c1; c <= s.c2; c++) {
+            rv.push(this.getCellValue(r, c));
+            const sk = this.skey(r, c);
+            rs.push(this.styles[sk] ? {...this.styles[sk]} : null);
+          }
+          lines.push(rv.join('\t'));
+          clipData.push(rv);
+          clipStyles.push(rs);
+        }
+
+        e.clipboardData.setData('text/plain', lines.join('\n'));
+        this._clipboard = { data: clipData, styles: clipStyles, startCol: s.c1 };
+      } catch(_) {}
+    },
+
+    onClipCut(e) {
+      try {
+        const ae = document.activeElement;
+        if (!ae || !this.$el.contains(ae)) return;
+        if (!this.isMultiSel()) return;
+
+        this.pushUndo();
+        this.onClipCopy(e);
+
+        const s = this.selectedRange();
+        for (let r = s.r1; r <= s.r2; r++) {
+          for (let c = s.c1; c <= s.c2; c++) {
+            this.setCellValue(r, c, '');
+            delete this.styles[this.skey(r, c)];
+          }
+        }
+        this.updateAutoFooters();
+        this.onChanged();
+      } catch(_) {}
+    },
+
+    onClipPaste(e) {
+      try {
+        const ae = document.activeElement;
+        if (!ae || !this.$el.contains(ae)) return;
+        if (!(ae.classList && (ae.classList.contains('ws-cell') || ae.closest('[data-cell="1"]')))) return;
+
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        if (!text) return;
+
+        const hasTab = text.includes('\t');
+        const hasNewline = text.includes('\n');
+        if (!hasTab && !hasNewline) return;
+
+        e.preventDefault();
+        this.pushUndo();
+
+        let rawLines = text.split('\n');
+        if (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === '') rawLines.pop();
+        if (rawLines.length > 500) rawLines = rawLines.slice(0, 500);
+
+        const startRow = this.activeRow;
+        const startCol = this.activeCol;
+
+        const neededRows = Math.min(startRow + rawLines.length, 500);
+        while (this.rows.length < neededRows) this.rows.push(this.makeRow({}));
+
+        const maxLines = Math.min(rawLines.length, 500 - startRow);
+        for (let ri = 0; ri < maxLines; ri++) {
+          const cols = rawLines[ri].split('\t');
+          for (let ci = 0; ci < cols.length; ci++) {
+            const tc = startCol + ci;
+            if (tc > 9) break;
+            this.setCellValue(startRow + ri, tc, cols[ci]);
+          }
+        }
+
+        if (this._clipboard && this._clipboard.styles) {
+          const cs = this._clipboard.styles;
+          for (let ri = 0; ri < cs.length; ri++) {
+            for (let ci = 0; ci < cs[ri].length; ci++) {
+              const tr = startRow + ri;
+              const tc = startCol + ci;
+              if (tc > 9 || tr >= this.rows.length) continue;
+              if (cs[ri][ci]) this.styles[this.skey(tr, tc)] = {...cs[ri][ci]};
+            }
+          }
+        }
+
+        this.rowsTarget = String(this.rows.length);
+        this.updateAutoFooters();
+        this.onChanged();
+
+        const endRow = Math.min(startRow + maxLines - 1, this.rows.length - 1);
+        const maxC = Math.max(...rawLines.slice(0, maxLines).map(l => l.split('\t').length));
+        const endCol = Math.min(startCol + maxC - 1, 9);
+        this.sel = { ar: startRow, ac: startCol, br: endRow, bc: endCol };
+        this.anchor = { r: startRow, c: startCol };
+      } catch(_) {}
     },
 
     /* =========================================================
@@ -2342,17 +2793,49 @@ document.addEventListener('alpine:init', () => {
     /* =========================================================
      * SAVE (DRAFT + DB)
      * ========================================================= */
+    flushPendingSave(force = false) {
+      clearTimeout(this._tSave);
+      const payload = this.payloadObject();
+      payload.ts = Date.now();
+      this.writePayloadInput(payload);
+      this.saveDraft(true, payload);
+      this.emitCreateDraft(payload);
+      if (force || this.reportId) {
+        this.saveRemote(true, payload);
+      }
+      return payload;
+    },
+
     onChanged() {
       this.updateAutoFooters();
+
+      // Keep hidden input in sync immediately so form submit never misses latest formatting.
+      this.writePayloadInput();
 
       clearTimeout(this._tSave);
       this.saveStatus = 'Saving...';
       this._tSave = setTimeout(() => {
         const payload = this.payloadObject();
         payload.ts = Date.now();
+        this.writePayloadInput(payload);
         this.saveDraft(true, payload);
         this.saveRemote(true, payload);
+        this.emitCreateDraft(payload);
       }, 900);
+    },
+
+    emitCreateDraft(payload = null) {
+      if (this.reportId) return;
+      const p = payload && typeof payload === 'object' ? payload : this.payloadObject();
+      try {
+        window.dispatchEvent(new CustomEvent('ccr:create-draft-section', {
+          detail: {
+            type: 'engine',
+            section: 'parts',
+            payload: p,
+          },
+        }));
+      } catch (e) {}
     },
 
     loadDraft() {
@@ -2375,6 +2858,43 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    sendBeaconRemote(payload = null) {
+      if (!this.reportId || !this.autosaveUrl) return false;
+      if (!navigator.sendBeacon) return false;
+
+      const p = payload || this.payloadObject();
+      if (!p || typeof p !== 'object') return false;
+      p.ts = p.ts || Date.now();
+
+      try {
+        const form = new FormData();
+        form.append('_token', String(this.csrf || ''));
+        form.append('parts_payload', JSON.stringify(p));
+        form.append('parts_payload_rev', String(Number(this.payloadRev || 0)));
+
+        const ok = navigator.sendBeacon(this.autosaveUrl, form);
+        if (ok) {
+          const payloadTs = this.readTs(p.ts);
+          if (payloadTs > 0) this.payloadTs = Math.max(this.readTs(this.payloadTs), payloadTs);
+        }
+        return !!ok;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    flushOnLeave(tryRemote = true) {
+      const payload = this.payloadObject();
+      payload.ts = Date.now();
+      this.writePayloadInput(payload);
+      this.saveDraft(true, payload);
+      this.emitCreateDraft(payload);
+
+      if (tryRemote) {
+        this.sendBeaconRemote(payload);
+      }
+    },
+
     async saveRemote(isAuto = true, payload = null) {
       if (!this.reportId || !this.autosaveUrl) return;
       const seq = ++this._saveSeq;
@@ -2390,11 +2910,25 @@ document.addEventListener('alpine:init', () => {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': this.csrf,
           },
-          body: JSON.stringify({ parts_payload: p }),
+          body: JSON.stringify({
+            parts_payload: p,
+            parts_payload_rev: Number(this.payloadRev || 0),
+          }),
         });
 
         if (seq !== this._saveSeq) return;
         if (!res.ok) throw new Error('autosave http ' + res.status);
+
+        const json = await res.json().catch(() => ({}));
+        if (json && typeof json === 'object' && Number.isFinite(Number(json.parts_payload_rev))) {
+          this.payloadRev = Number(json.parts_payload_rev || 0);
+        }
+        if (json && json.stale && json.stale.parts) {
+          this.saveStatus = 'AutoSave stale skipped (Parts)';
+          return;
+        }
+        const payloadTs = this.readTs(p.ts);
+        if (payloadTs > 0) this.payloadTs = Math.max(this.readTs(this.payloadTs), payloadTs);
 
         this.saveStatus = (isAuto ? 'Auto-saved (DB)' : 'Saved (DB)') + ' ' + new Date().toLocaleTimeString();
       } catch (e) {
@@ -2404,6 +2938,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     payloadObject() {
+      if (this.noteOpen) this.commitOpenNote({ silent: true, force: true });
       const last = this.lastNonEmptyIndex();
       const keep = Math.max(1, last + 1);
       const rowsSlice = this.rows.slice(0, keep);
@@ -2426,6 +2961,10 @@ document.addEventListener('alpine:init', () => {
       const finalFooterTotal = this.footerTotalManual ? this.onlyDigits(this.footerTotal) : this.onlyDigits(this.footerAutoTotal);
       const finalFooterExtended = this.footerExtendedManual ? this.onlyDigits(this.footerExtended) : this.onlyDigits(this.footerAutoExtended);
 
+      const stylesPlain = JSON.parse(JSON.stringify(this.styles || {}));
+      const notesPlain = JSON.parse(JSON.stringify(this.notes || {}));
+      const toolsPlain = JSON.parse(JSON.stringify(this.tools || {}));
+
       return {
         meta: {
           no_unit: String(this.noUnit||'').trim(),
@@ -2438,9 +2977,17 @@ document.addEventListener('alpine:init', () => {
           rows_count: this.rows.length,
         },
         rows: rowsAll,
-        styles: this.styles || {},
-        notes: this.notes || {},
+        styles: stylesPlain,
+        notes: notesPlain,
+        tools: toolsPlain,
       };
+    },
+
+    writePayloadInput(payload = null) {
+      const input = this.$refs.partsPayloadInput;
+      if (!input) return;
+      const p = (payload && typeof payload === 'object') ? payload : this.payloadObject();
+      input.value = JSON.stringify(p);
     },
 
     jsonPayload() {
@@ -2449,4 +2996,3 @@ document.addEventListener('alpine:init', () => {
   }));
 });
 </script>
-

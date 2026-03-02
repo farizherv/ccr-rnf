@@ -14,6 +14,7 @@ class CcrReport extends Model
 
     protected $fillable = [
         'type',
+        'created_by',
         'template_key',
         'template_version',
         'group_folder',
@@ -36,16 +37,15 @@ class CcrReport extends Model
     ];
 
     protected $casts = [
-        'inspection_date'   => 'datetime',
+        'inspection_date' => 'date',
         'docx_generated_at' => 'datetime',
-        'purge_at'          => 'datetime',
-        'deleted_at'        => 'datetime',
+        'purge_at' => 'datetime',
+        'deleted_at' => 'datetime',
         'template_version' => 'integer',
         'parts_payload' => 'array',
         'detail_payload' => 'array',
         'parts_payload_rev' => 'integer',
         'detail_payload_rev' => 'integer',
-        'inspection_date' => 'date',
     ];
 
 

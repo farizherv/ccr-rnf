@@ -4,21 +4,35 @@ namespace App\Http\Controllers;
 
 use App\Models\CcrItem;
 use App\Models\CcrPhoto;
+use App\Models\CcrDraft;
 use App\Models\CcrReport;
+use App\Support\CcrReportService;
+use App\Support\CcrWorksheetService;
 use App\Support\Inbox;
+use App\Support\PayloadSanitizer;
+use App\Support\ActivityLogger;
 use App\Support\WorksheetTemplates\EngineTemplateRepo;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class CcrEngineController extends Controller
 {
+    public function __construct(
+        private readonly PayloadSanitizer $sanitizer,
+        private readonly CcrWorksheetService $worksheetService,
+        private readonly CcrReportService $reportService,
+    ) {}
+
     // ===========================================================
     // CREATE PAGE
     // ===========================================================
-    public function create()
+    public function create(Request $request)
     {
         $groupFolders = ['Engine', 'Transmission', 'Radiator', 'Cabin', 'After Cooler'];
 
@@ -43,8 +57,9 @@ class CcrEngineController extends Controller
         }
 
         $templates = $this->getEngineTemplates();
+        $draftSeed = $this->reportService->resolveCreateDraftSeed($request, 'engine');
 
-        return view('engine.create', compact('groupFolders', 'groupedCustomers', 'brands', 'templates'));
+        return view('engine.create', compact('groupFolders', 'groupedCustomers', 'brands', 'templates', 'draftSeed'));
     } 
 
     // ===========================================================
@@ -60,18 +75,96 @@ class CcrEngineController extends Controller
             'model' => 'nullable|string',
             'sn' => 'nullable|string',
             'smu' => 'nullable|string',
-            'inspection_date' => 'required|string',
+            'inspection_date' => 'required|date',
+            'draft_id' => 'nullable|string|max:64',
+            'draft_client_key' => 'nullable|string|max:120',
 
             'template_key' => 'nullable|string',
             'template_version' => 'nullable|integer',
-            'parts_payload' => 'nullable|string',
-            'detail_payload' => 'nullable|string',
+            'expected_upload_count' => 'nullable|integer|min:0',
+            'parts_payload' => ['nullable', 'string', function ($attr, $val, $fail) {
+                if ($val === null || trim((string) $val) === '') return;
+                json_decode((string) $val, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $fail('Parts payload JSON tidak valid.');
+                }
+            }],
+            'detail_payload' => ['nullable', 'string', function ($attr, $val, $fail) {
+                if ($val === null || trim((string) $val) === '') return;
+                json_decode((string) $val, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $fail('Detail payload JSON tidak valid.');
+                }
+            }],
+
+            // items + photos (create flow)
+            'items' => 'nullable|array',
+            'items.*.description' => 'nullable|string',
+            'items.*.photos' => 'nullable|array',
+            'items.*.photos.*' => 'nullable|image|mimes:jpeg,png,webp|max:8192',
+            'new_items' => 'nullable|array',
+            'new_items.*.description' => 'nullable|string',
+            'new_items.*.photos' => 'nullable|array',
+            'new_items.*.photos.*' => 'nullable|image|mimes:jpeg,png,webp|max:8192',
         ]);
+
+        $expectedUploadCount = (int) ($data['expected_upload_count'] ?? 0);
+        $actualUploadCount = $this->reportService->countUploadedFilesByKeys($request, ['items', 'new_items']);
+        if ($expectedUploadCount > $actualUploadCount) {
+            return back()->withInput()->withErrors([
+                'photos' => 'Sebagian foto tidak diterima server (dipilih: ' . $expectedUploadCount . ', diterima: ' . $actualUploadCount . '). Kemungkinan batas max_file_uploads / post_max_size masih terlalu kecil.',
+            ]);
+        }
+
+        try {
+
+        if ($request->has('parts_payload')) {
+            $this->sanitizer->ensurePayloadWithinLimit($request->input('parts_payload'), 'parts_payload');
+        }
+        if ($request->has('detail_payload')) {
+            $this->sanitizer->ensurePayloadWithinLimit($request->input('detail_payload'), 'detail_payload');
+        }
+
+        // Robust parsing: create bisa kirim `items[...]`; fallback ke `new_items[...]` jika flow lama/tercampur.
+        $itemsInput = $request->input('items');
+        $itemFilesInput = $request->file('items', []);
+        if (!is_array($itemsInput) || count($itemsInput) === 0) {
+            $fallbackItems = $request->input('new_items');
+            if (is_array($fallbackItems) && count($fallbackItems) > 0) {
+                $itemsInput = $fallbackItems;
+                $itemFilesInput = $request->file('new_items', []);
+            } else {
+                $itemsInput = [];
+            }
+        }
+
+        $hasAnyMeaningfulItem = false;
+        foreach ($itemsInput as $index => $itemData) {
+            $desc = trim((string) data_get($itemData, 'description', ''));
+            $uploadedPhotos = $this->reportService->normalizeUploadedImageFiles(
+                data_get($itemFilesInput, $index . '.photos')
+            );
+            if ($desc !== '' || !empty($uploadedPhotos)) {
+                $hasAnyMeaningfulItem = true;
+                break;
+            }
+        }
+        if (!$hasAnyMeaningfulItem) {
+            return back()->withInput()->withErrors([
+                'items' => 'Minimal 1 item temuan (deskripsi atau foto) wajib diisi.',
+            ]);
+        }
 
         $finalDate = Carbon::parse($data['inspection_date'])->format('Y-m-d');
 
-        $templateKey = $data['template_key'] ?? 'engine_blank';
-        $templateVersionInt = (int)($data['template_version'] ?? 1);
+        $templateKey = trim((string) ($data['template_key'] ?? 'engine_blank'));
+        if ($templateKey === '') {
+            $templateKey = 'engine_blank';
+        }
+        $templateVersionInt = (int) ($data['template_version'] ?? 1);
+        if ($templateVersionInt < 1) {
+            $templateVersionInt = 1;
+        }
 
         $partsPayload = [];
         $detailPayload = [];
@@ -86,18 +179,58 @@ class CcrEngineController extends Controller
             $detailPayload = is_array($decoded) ? $decoded : [];
         }
 
+        $draftModel = $this->reportService->resolveCreateDraftModel(
+            'engine',
+            (int) auth()->id(),
+            $data['draft_id'] ?? null,
+            $data['draft_client_key'] ?? null
+        );
+
+        $draftParts = $draftModel && is_array($draftModel->parts_payload) ? $draftModel->parts_payload : [];
+        $draftDetail = $draftModel && is_array($draftModel->detail_payload) ? $draftModel->detail_payload : [];
+
+        if (!empty($draftParts)) {
+            $partsPayload = $this->sanitizer->mergeCreatePartsPayload((array) $partsPayload, (array) $draftParts);
+        }
+        if (!empty($draftDetail)) {
+            $detailPayload = $this->sanitizer->mergeCreateDetailPayload((array) $detailPayload, (array) $draftDetail);
+        }
+
+        if ($this->sanitizer->isLikelyIncompletePartsPayload((array) $partsPayload) && !$this->sanitizer->isLikelyIncompletePartsPayload((array) $draftParts)) {
+            $partsPayload = (array) $draftParts;
+        }
+        if ($this->sanitizer->isLikelyIncompleteDetailPayload((array) $detailPayload) && !$this->sanitizer->isLikelyIncompleteDetailPayload((array) $draftDetail)) {
+            $detailPayload = (array) $draftDetail;
+        }
+
+        [$payloadTemplateKey, $payloadVersionStr, $payloadVersionInt] = $this->resolveTemplateFromPayload((array) $partsPayload);
+
         // fallback defaults
-        if (empty($partsPayload) || empty($detailPayload)) {
+        if ($payloadTemplateKey) {
+            $templateKey = $payloadTemplateKey;
+            if ($payloadVersionInt !== null) {
+                $templateVersionInt = max(1, (int) $payloadVersionInt);
+            } elseif (trim((string) $payloadVersionStr) !== '') {
+                $parsed = $this->sanitizer->toTemplateVersionInt($payloadVersionStr);
+                if ($parsed !== null) {
+                    $templateVersionInt = max(1, (int) $parsed);
+                }
+            }
+        }
+
+        $needsPartsDefaults = $this->sanitizer->isLikelyIncompletePartsPayload((array) $partsPayload);
+        $needsDetailDefaults = $this->sanitizer->isLikelyIncompleteDetailPayload((array) $detailPayload);
+        if ($needsPartsDefaults || $needsDetailDefaults) {
             // ✅ pakai repo yang kamu import: App\Support\WorksheetTemplates\EngineTemplateRepo
             if (method_exists(EngineTemplateRepo::class, 'loadDefaults')) {
                 $repo = app(EngineTemplateRepo::class);
                 $defaults = $repo->loadDefaults($templateKey, $templateVersionInt);
-                if (empty($partsPayload) && !empty($defaults['parts_defaults'])) $partsPayload = $defaults['parts_defaults'];
-                if (empty($detailPayload) && !empty($defaults['detail_defaults'])) $detailPayload = $defaults['detail_defaults'];
+                if ($needsPartsDefaults && !empty($defaults['parts_defaults'])) $partsPayload = $defaults['parts_defaults'];
+                if ($needsDetailDefaults && !empty($defaults['detail_defaults'])) $detailPayload = $defaults['detail_defaults'];
             } else {
                 $defaults = EngineTemplateRepo::defaults($templateKey);
-                if (empty($partsPayload) && !empty($defaults['parts'])) $partsPayload = $defaults['parts'];
-                if (empty($detailPayload) && !empty($defaults['detail'])) $detailPayload = $defaults['detail'];
+                if ($needsPartsDefaults && !empty($defaults['parts'])) $partsPayload = $defaults['parts'];
+                if ($needsDetailDefaults && !empty($defaults['detail'])) $detailPayload = $defaults['detail'];
             }
         }
 
@@ -105,9 +238,27 @@ class CcrEngineController extends Controller
         if (!isset($detailPayload['totals']['sales_tax_percent'])) {
             $detailPayload['totals']['sales_tax_percent'] = 11;
         }
+        if (isset($detailPayload['totals']['tax_percent']) && !isset($detailPayload['totals']['sales_tax_percent'])) {
+            $detailPayload['totals']['sales_tax_percent'] = $detailPayload['totals']['tax_percent'];
+        }
+
+        $manifest = EngineTemplateRepo::manifest($templateKey);
+        $versionStr = is_array($manifest) ? trim((string) ($manifest['version'] ?? '')) : '';
+        if ($versionStr === '') {
+            $versionStr = 'v' . $templateVersionInt;
+        }
+
+        $partsPayload = $this->sanitizer->sanitizePartsPayload((array) $partsPayload, $templateKey, $versionStr, $manifest);
+        $detailPayload = $this->sanitizer->sanitizeDetailPayload((array) $detailPayload, $templateKey, $versionStr, $manifest);
+
+        $partsPayloadTs = $this->sanitizer->payloadTimestampFromArray((array) $partsPayload);
+        $detailPayloadTs = $this->sanitizer->payloadTimestampFromArray((array) $detailPayload);
+        $partsPayloadRev = $partsPayloadTs ?? (!empty($partsPayload) ? 1 : null);
+        $detailPayloadRev = $detailPayloadTs ?? (!empty($detailPayload) ? 1 : null);
 
         $report = CcrReport::create([
             'type' => 'engine',
+            'created_by' => auth()->id(),
             'group_folder' => $data['group_folder'],
             'component' => $data['component'],
             'make' => $data['make'] ?? null,
@@ -122,10 +273,66 @@ class CcrEngineController extends Controller
 
             'parts_payload' => $partsPayload,
             'detail_payload' => $detailPayload,
+            'parts_payload_rev' => $partsPayloadRev,
+            'detail_payload_rev' => $detailPayloadRev,
         ]);
 
-        return redirect()->route('engine.edit', $report->id)
-            ->with('success', 'CCR Engine berhasil dibuat.');
+        // Simpan item + foto dari create (parity dengan flow seat).
+        $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
+        $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', (string) $report->component), 0, 30);
+        $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
+        Storage::disk('public')->makeDirectory("$folder/photos");
+
+        foreach ($itemsInput as $index => $itemData) {
+            $desc = trim((string) data_get($itemData, 'description', ''));
+            $uploadedPhotos = $this->reportService->normalizeUploadedImageFiles(
+                data_get($itemFilesInput, $index . '.photos')
+            );
+            if ($desc === '' && empty($uploadedPhotos)) {
+                continue;
+            }
+
+            $item = CcrItem::create([
+                'ccr_report_id' => $report->id,
+                'description' => $desc,
+            ]);
+
+            foreach ($uploadedPhotos as $photo) {
+                if (!$photo instanceof UploadedFile || !$photo->isValid()) continue;
+                $path = $photo->store("$folder/photos", 'public');
+                CcrPhoto::create([
+                    'ccr_item_id' => $item->id,
+                    'path' => $path,
+                ]);
+            }
+        }
+
+        $userId = (int) auth()->id();
+        $draftClientKey = trim((string) ($data['draft_client_key'] ?? ''));
+
+        // Cegah race: request autosave yang telat (in-flight) tidak boleh bikin draft baru lagi.
+        if ($draftClientKey !== '') {
+            Cache::put($this->reportService->draftFinalizedCacheKey('engine', $userId, $draftClientKey), true, now()->addSeconds(120));
+        }
+
+        // Setelah report final tersimpan, bersihkan draft engine user agar popup draft tidak muncul lagi.
+        CcrDraft::query()
+            ->where('user_id', $userId)
+            ->where('type', 'engine')
+            ->delete();
+
+        ActivityLogger::log('create', $report, ['type' => 'engine', 'component' => $report->component]);
+
+        return redirect()->route('ccr.manage.engine')
+            ->with('success', 'CCR Engine berhasil dibuat.')
+            ->with('clear_create_draft', 'engine');
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'Terjadi kesalahan saat menyimpan laporan. Silakan coba lagi.');
+        }
     }
 
     // ===========================================================
@@ -134,6 +341,7 @@ class CcrEngineController extends Controller
     public function edit($id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
+        $groupFolders = ['Engine', 'Transmission', 'Radiator', 'Cabin', 'After Cooler'];
 
         // ✅ Opsi A: kalau report sudah punya template_key dan payload masih kosong → isi default template
         $this->ensureWorksheetInitialized($report);
@@ -160,7 +368,16 @@ class CcrEngineController extends Controller
 
         $templates = $this->getEngineTemplates();
 
-        return view('engine.edit-engine', compact('report', 'brands', 'groupedCustomers', 'templates'));
+        // Edit lock: check if someone else is editing
+        $lockedBy = null;
+        $lock = EditLockController::checkLock((int) $report->id);
+        if ($lock && (int) ($lock['user_id'] ?? 0) !== (int) auth()->id()) {
+            $lockedBy = $lock['user_name'] ?? 'User lain';
+        } else {
+            EditLockController::acquireLock((int) $report->id);
+        }
+
+        return view('engine.edit-engine', compact('report', 'brands', 'groupedCustomers', 'templates', 'groupFolders', 'lockedBy'));
     }
 
     // ===========================================================
@@ -169,11 +386,15 @@ class CcrEngineController extends Controller
     public function updateHeader(Request $request, $id)
     {
         $report = CcrReport::with('items.photos')->findOrFail($id);
+        $this->authorize('update', $report);
 
         $validator = Validator::make($request->all(), [
             'group_folder'    => 'required|string',
             'component'       => 'required|string',
             'inspection_date' => 'required|date',
+            'expected_upload_count' => 'nullable|integer|min:0',
+            'parts_payload_rev' => 'nullable|integer|min:0',
+            'detail_payload_rev' => 'nullable|integer|min:0',
 
             // payload JSON (boleh kosong)
             'parts_payload'   => ['nullable', 'string', function ($attr, $val, $fail) {
@@ -190,13 +411,15 @@ class CcrEngineController extends Controller
             'items'                 => 'nullable|array',
             'items.*.description'   => 'nullable|string',
             'items.*.photos'        => 'nullable|array',
-            'items.*.photos.*'      => 'nullable|image|max:8000',
+            'items.*.photos.*'      => 'nullable|image|mimes:jpeg,png,webp|max:8192',
             'items.*.delete_photos' => 'nullable|array',
+            'deleted_items'         => 'nullable|array',
+            'deleted_items.*'       => 'nullable|integer',
 
             'new_items'               => 'nullable|array',
             'new_items.*.description' => 'nullable|string',
             'new_items.*.photos'      => 'nullable|array',
-            'new_items.*.photos.*'    => 'nullable|image|max:8000',
+            'new_items.*.photos.*'    => 'nullable|image|mimes:jpeg,png,webp|max:8192',
         ]);
 
         // validasi “desc atau foto” untuk ITEM LAMA
@@ -221,85 +444,171 @@ class CcrEngineController extends Controller
         });
 
         $data = $validator->validate();
+        $expectedUploadCount = (int) ($data['expected_upload_count'] ?? 0);
+        $actualUploadCount = $this->reportService->countUploadedFilesByKeys($request, ['items', 'new_items']);
+        if ($expectedUploadCount > $actualUploadCount) {
+            return back()->withInput()->withErrors([
+                'photos' => 'Sebagian foto tidak diterima server (dipilih: ' . $expectedUploadCount . ', diterima: ' . $actualUploadCount . '). Kemungkinan batas max_file_uploads / post_max_size masih terlalu kecil.',
+            ]);
+        }
+
+        try {
+
+        $deletedItemIds = collect($data['deleted_items'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+        $deletedItemIdList = $deletedItemIds->all();
 
         $changed = false;
+        $payloadChanged = false;
+        $staleSections = [];
 
         // tanggal + jam WITA
         $finalDate = Carbon::parse($data['inspection_date'])
             ->setTimeFromTimeString(now('Asia/Makassar')->format('H:i'));
 
-        // ============================
-        // Payload update (ANTI KEHAPUS):
-        // - kalau request payload kosong -> JANGAN overwrite DB
-        // - overwrite hanya kalau ada JSON valid dan bukan truly-empty
-        // ============================
-        $payloadChanged = false;
+        $hasPartsPayload = $request->has('parts_payload');
+        $hasDetailPayload = $request->has('detail_payload');
+        $partsRawInput = $hasPartsPayload ? $request->input('parts_payload') : null;
+        $detailRawInput = $hasDetailPayload ? $request->input('detail_payload') : null;
 
-        // decode dulu untuk ambil template meta (kalau ada)
-        $rawParts  = $this->decodeJsonInput($request->input('parts_payload'));
-        $rawDetail = $this->decodeJsonInput($request->input('detail_payload'));
+        if (!$hasPartsPayload || !$hasDetailPayload) {
+            return back()->withInput()->withErrors([
+                'worksheet' => 'Payload worksheet tidak lengkap. Simpan dibatalkan untuk mencegah data style/note/tools hilang. Coba refresh lalu simpan ulang.',
+            ]);
+        }
+
+        if ($hasPartsPayload) {
+            $this->sanitizer->ensurePayloadWithinLimit($partsRawInput, 'parts_payload');
+        }
+        if ($hasDetailPayload) {
+            $this->sanitizer->ensurePayloadWithinLimit($detailRawInput, 'detail_payload');
+        }
+
+        $rawParts  = $this->sanitizer->decodeJsonInput($partsRawInput);
+        $rawDetail = $this->sanitizer->decodeJsonInput($detailRawInput);
+
+        // Final submit dari form edit harus authoritative:
+        // kalau payload tidak membawa ts, inject ts server agar tidak ter-drop karena rev stale.
+        $serverSubmitTs = (int) floor(microtime(true) * 1000);
+        if ($hasPartsPayload && !empty($rawParts) && $this->sanitizer->payloadTimestampFromArray($rawParts) === null) {
+            $rawParts['ts'] = $serverSubmitTs;
+        }
+        if ($hasDetailPayload && !empty($rawDetail) && $this->sanitizer->payloadTimestampFromArray($rawDetail) === null) {
+            $rawDetail['ts'] = $serverSubmitTs;
+        }
+
         [$templateKey, $templateVersionStr, $templateVersionInt, $manifest] = $this->resolveTemplateFromPayload($rawParts);
 
-        if ($request->filled('parts_payload')) {
-            $newParts = $this->sanitizePartsPayload($rawParts, $templateKey, $templateVersionStr, $manifest);
-            if (!empty($newParts)) {
-                $report->parts_payload = $newParts;
-                $payloadChanged = true;
+        $partsClientRev = $this->sanitizer->parsePayloadRevision($request->input('parts_payload_rev'));
+        $detailClientRev = $this->sanitizer->parsePayloadRevision($request->input('detail_payload_rev'));
+
+        DB::transaction(function () use (
+            $report,
+            $data,
+            $request,
+            $finalDate,
+            $templateKey,
+            $templateVersionInt,
+            $templateVersionStr,
+            $manifest,
+            $rawParts,
+            $rawDetail,
+            $hasPartsPayload,
+            $hasDetailPayload,
+            $partsClientRev,
+            $detailClientRev,
+            &$changed,
+            &$payloadChanged,
+            &$staleSections
+        ) {
+            $locked = CcrReport::query()->whereKey($report->id)->lockForUpdate()->firstOrFail();
+
+            if ($hasPartsPayload) {
+                $newParts = $this->sanitizer->sanitizePartsPayload($rawParts, $templateKey, $templateVersionStr, $manifest);
+                if (!empty($newParts)) {
+                    $partsState = $this->worksheetService->applyWorksheetPayloadSection($locked, 'parts', $newParts, $partsClientRev);
+                    if ($partsState['stale']) $staleSections[] = 'parts';
+                    if ($partsState['payload_changed']) $payloadChanged = true;
+                }
             }
-        }
 
-        if ($request->filled('detail_payload')) {
-            $newDetail = $this->sanitizeDetailPayload($rawDetail, $templateKey, $templateVersionStr, $manifest);
-            if (!empty($newDetail)) {
-                $report->detail_payload = $newDetail;
-                $payloadChanged = true;
+            if ($hasDetailPayload) {
+                $newDetail = $this->sanitizer->sanitizeDetailPayload($rawDetail, $templateKey, $templateVersionStr, $manifest);
+                if (!empty($newDetail)) {
+                    $detailState = $this->worksheetService->applyWorksheetPayloadSection($locked, 'detail', $newDetail, $detailClientRev);
+                    if ($detailState['stale']) $staleSections[] = 'detail';
+                    if ($detailState['payload_changed']) $payloadChanged = true;
+                }
             }
-        }
 
-        // update template columns kalau payload mengandung template meta
-        if ($templateKey) {
-            $report->template_key = $templateKey;
-            if ($templateVersionInt !== null) {
-                $report->template_version = $templateVersionInt;
+            // update template columns kalau payload mengandung template meta
+            if ($templateKey) {
+                $locked->template_key = $templateKey;
+                if ($templateVersionInt !== null) {
+                    $locked->template_version = $templateVersionInt;
+                }
             }
-        }
 
-        // Update header report
-        $report->fill([
-            'group_folder'    => $data['group_folder'],
-            'component'       => $data['component'],
-            'make'            => $request->make,
-            'model'           => $request->model,
-            'sn'              => $request->sn,
-            'smu'             => $request->smu,
-            'customer'        => $request->customer,
-            'inspection_date' => $finalDate,
-        ]);
+            // Update header report
+            $locked->fill([
+                'group_folder'    => $data['group_folder'],
+                'component'       => $data['component'],
+                'make'            => $request->make,
+                'model'           => $request->model,
+                'sn'              => $request->sn,
+                'smu'             => $request->smu,
+                'customer'        => $request->customer,
+                'inspection_date' => $finalDate,
+            ]);
 
-        if ($report->isDirty()) {
-            $report->save();
-            $changed = true;
-        }
-
-        if ($payloadChanged) {
-            // kalau payload diset tapi kebetulan isDirty() false,
-            // kita paksa save sekali
-            if (!$changed) {
-                $report->save();
+            if ($locked->isDirty()) {
+                $locked->save();
+                $changed = true;
             }
-            $changed = true;
-        }
+        });
+
+        $staleSections = array_values(array_unique($staleSections));
+        $report = CcrReport::with('items.photos')->findOrFail($id);
 
         // folder photos
         $date = Carbon::parse($report->inspection_date)->format('Y-m-d');
         $safe = substr(preg_replace('/[^A-Za-z0-9\- ]/', '', $report->component), 0, 30);
         $folder = "synology/CCR-{$report->group_folder}-{$date}-{$safe}";
         Storage::disk('public')->makeDirectory("$folder/photos");
+        $uploadedExistingItems = is_array($request->file('items')) ? $request->file('items') : [];
+        $uploadedNewItems = is_array($request->file('new_items')) ? $request->file('new_items') : [];
+
+        // ===== DELETE OLD ITEMS (inline delete dari form edit, tanpa refresh) =====
+        if (!empty($deletedItemIdList)) {
+            $itemsToDelete = CcrItem::with('photos')
+                ->where('ccr_report_id', $report->id)
+                ->whereIn('id', $deletedItemIdList)
+                ->get();
+
+            foreach ($itemsToDelete as $itemToDelete) {
+                foreach ($itemToDelete->photos as $photo) {
+                    if (!empty($photo->path)) {
+                        Storage::disk('public')->delete($photo->path);
+                    }
+                }
+                $itemToDelete->delete();
+                $changed = true;
+            }
+        }
 
         // ===== UPDATE OLD ITEMS =====
         if (!empty($data['items'])) {
             foreach ($data['items'] as $itemId => $input) {
-                $item = CcrItem::with('photos')->find($itemId);
+                if (in_array((int) $itemId, $deletedItemIdList, true)) {
+                    continue;
+                }
+                $item = CcrItem::with('photos')
+                    ->where('ccr_report_id', $report->id)
+                    ->whereKey((int) $itemId)
+                    ->first();
                 if (!$item) continue;
 
                 $item->fill([
@@ -314,7 +623,10 @@ class CcrEngineController extends Controller
                 // delete old photos
                 if (!empty($input['delete_photos'])) {
                     foreach ($input['delete_photos'] as $photoId) {
-                        $photo = CcrPhoto::find($photoId);
+                        $photo = CcrPhoto::query()
+                            ->where('ccr_item_id', $item->id)
+                            ->whereKey((int) $photoId)
+                            ->first();
                         if ($photo) {
                             Storage::disk('public')->delete($photo->path);
                             $photo->delete();
@@ -324,15 +636,16 @@ class CcrEngineController extends Controller
                 }
 
                 // upload new photos
-                if ($request->hasFile("items.$itemId.photos")) {
-                    foreach ($request->file("items.$itemId.photos") as $photo) {
-                        $path = $photo->store("$folder/photos", 'public');
-                        CcrPhoto::create([
-                            'ccr_item_id' => $itemId,
-                            'path'        => $path,
-                        ]);
-                        $changed = true;
-                    }
+                $uploadedPhotos = $this->reportService->normalizeUploadedImageFiles(
+                    data_get($uploadedExistingItems, $itemId . '.photos')
+                );
+                foreach ($uploadedPhotos as $photo) {
+                    $path = $photo->store("$folder/photos", 'public');
+                    CcrPhoto::create([
+                        'ccr_item_id' => $item->id,
+                        'path'        => $path,
+                    ]);
+                    $changed = true;
                 }
             }
         }
@@ -341,7 +654,10 @@ class CcrEngineController extends Controller
         if (!empty($data['new_items'])) {
             foreach ($data['new_items'] as $index => $input) {
                 $hasDesc  = trim((string) ($input['description'] ?? ''));
-                $hasPhoto = $request->hasFile("new_items.$index.photos");
+                $newItemPhotos = $this->reportService->normalizeUploadedImageFiles(
+                    data_get($uploadedNewItems, $index . '.photos')
+                );
+                $hasPhoto = !empty($newItemPhotos);
 
                 if ($hasDesc === '' && !$hasPhoto) continue;
 
@@ -351,15 +667,13 @@ class CcrEngineController extends Controller
                 ]);
                 $changed = true;
 
-                if ($hasPhoto) {
-                    foreach ($request->file("new_items.$index.photos") as $photo) {
-                        $path = $photo->store("$folder/photos", 'public');
-                        CcrPhoto::create([
-                            'ccr_item_id' => $item->id,
-                            'path'        => $path,
-                        ]);
-                        $changed = true;
-                    }
+                foreach ($newItemPhotos as $photo) {
+                    $path = $photo->store("$folder/photos", 'public');
+                    CcrPhoto::create([
+                        'ccr_item_id' => $item->id,
+                        'path'        => $path,
+                    ]);
+                    $changed = true;
                 }
             }
         }
@@ -372,8 +686,27 @@ class CcrEngineController extends Controller
             ]);
         }
 
-        return redirect()->route('ccr.manage.engine')
+        if ($request->boolean('preview_after_save')) {
+            return redirect()->route('engine.preview', $report->id);
+        }
+
+        ActivityLogger::log('update', $report, ['type' => 'engine', 'component' => $report->component]);
+
+        $redirect = redirect()->route('ccr.manage.engine')
             ->with('success', 'Perubahan CCR Engine berhasil disimpan!');
+
+        if (!empty($staleSections)) {
+            $redirect->with('warning', 'Sebagian autosave lama diabaikan (stale): ' . implode(', ', $staleSections) . '. Data terbaru tetap dipakai.');
+        }
+
+        return $redirect;
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'Terjadi kesalahan saat menyimpan perubahan. Silakan coba lagi.');
+        }
     }
 
     // ===========================================================
@@ -398,15 +731,15 @@ class CcrEngineController extends Controller
 
         $manifest = is_array($defaults['manifest'] ?? null) ? $defaults['manifest'] : [];
         $versionStr = (string) ($manifest['version'] ?? '');
-        $versionInt = $this->toTemplateVersionInt($versionStr);
+        $versionInt = $this->sanitizer->toTemplateVersionInt($versionStr);
         $detail = $defaults['detail'] ?? [];
         if (isset($detail['totals']['tax_percent']) && !isset($detail['totals']['sales_tax_percent'])) {
             $detail['totals']['sales_tax_percent'] = $detail['totals']['tax_percent'];
         }
 
         // pastikan payload punya meta template juga (biar UI langsung sinkron)
-        $parts  = $this->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
-        $detail = $this->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
+        $parts  = $this->sanitizer->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
+        $detail = $this->sanitizer->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
 
         // datalists (per template) + fallback global
         $datalists = \App\Support\WorksheetTemplates\EngineTemplateRepo::datalists($key);
@@ -449,7 +782,7 @@ class CcrEngineController extends Controller
 
         $manifest = $defaults['manifest'];
         $versionStr = (string) ($manifest['version'] ?? '');
-        $versionInt = $this->toTemplateVersionInt($versionStr) ?? 1;
+        $versionInt = $this->sanitizer->toTemplateVersionInt($versionStr) ?? 1;
 
         DB::transaction(function () use ($report, $key, $versionInt, $versionStr, $manifest, $defaults, $replace) {
             $r = CcrReport::whereKey($report->id)->lockForUpdate()->first();
@@ -461,15 +794,15 @@ class CcrEngineController extends Controller
             $detailEmpty = empty($r->detail_payload) || $r->detail_payload === [];
 
             if ($replace || $partsEmpty) {
-                $r->parts_payload = $this->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
+                $r->parts_payload = $this->sanitizer->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
             } else {
-                $r->parts_payload = $this->sanitizePartsPayload((array) $r->parts_payload, $key, $versionStr, $manifest);
+                $r->parts_payload = $this->sanitizer->sanitizePartsPayload((array) $r->parts_payload, $key, $versionStr, $manifest);
             }
 
             if ($replace || $detailEmpty) {
-                $r->detail_payload = $this->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
+                $r->detail_payload = $this->sanitizer->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
             } else {
-                $r->detail_payload = $this->sanitizeDetailPayload((array) $r->detail_payload, $key, $versionStr, $manifest);
+                $r->detail_payload = $this->sanitizer->sanitizeDetailPayload((array) $r->detail_payload, $key, $versionStr, $manifest);
             }
 
             // invalidate docx
@@ -490,8 +823,6 @@ class CcrEngineController extends Controller
 // ===========================================================
 public function autosaveWorksheet(Request $request, int $id)
 {
-    $report = CcrReport::findOrFail($id);
-
     $hasParts  = $request->has('parts_payload');
     $hasDetail = $request->has('detail_payload');
 
@@ -506,225 +837,346 @@ public function autosaveWorksheet(Request $request, int $id)
     $partsRaw  = $hasParts  ? $request->input('parts_payload')  : null;
     $detailRaw = $hasDetail ? $request->input('detail_payload') : null;
 
-    $dirty = false;
-
-    // ============================
-    // Context template dari report (fallback)
-    // ============================
-    $ctxKey = trim((string) ($report->template_key ?? ''));
-    $ctxKey = ($ctxKey !== '') ? $ctxKey : null;
-
-    $ctxManifest = $ctxKey ? EngineTemplateRepo::manifest($ctxKey) : null;
-
-    $ctxVersionStr = '';
-    if (is_array($ctxManifest)) {
-        $ctxVersionStr = trim((string) ($ctxManifest['version'] ?? ''));
-    }
-    if ($ctxVersionStr === '') {
-        $ctxVersionStr = 'v' . (int) ($report->template_version ?: 1);
-    }
-
-    $ctxVersionInt = (int) ($report->template_version ?: ($this->toTemplateVersionInt($ctxVersionStr) ?: 1));
-
-    // ============================
-    // PARTS autosave
-    // - resolve template meta dari parts payload (kalau ada)
-    // - sanitize + anti overwrite kosong
-    // ============================
     if ($hasParts) {
-        $rawPartsArr = $this->decodeJsonInput($partsRaw);
+        $this->sanitizer->ensurePayloadWithinLimit($partsRaw, 'parts_payload');
+        if ($this->sanitizer->isInvalidJsonInput($partsRaw)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Invalid parts_payload JSON',
+            ], 422);
+        }
+    }
 
-        // coba ambil template meta dari payload parts (kalau user baru pilih template)
-        [$pKey, $pVerStr, $pVerInt, $pManifest] = $this->resolveTemplateFromPayload($rawPartsArr);
+    if ($hasDetail) {
+        $this->sanitizer->ensurePayloadWithinLimit($detailRaw, 'detail_payload');
+        if ($this->sanitizer->isInvalidJsonInput($detailRaw)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Invalid detail_payload JSON',
+            ], 422);
+        }
+    }
 
-        if ($pKey) {
-            $ctxKey = $pKey;
-            $ctxManifest = is_array($pManifest) ? $pManifest : ($ctxKey ? EngineTemplateRepo::manifest($ctxKey) : null);
+    $partsClientRev = $this->sanitizer->parsePayloadRevision($request->input('parts_payload_rev'));
+    $detailClientRev = $this->sanitizer->parsePayloadRevision($request->input('detail_payload_rev'));
 
-            if (trim((string) $pVerStr) !== '') $ctxVersionStr = trim((string) $pVerStr);
-            else if (is_array($ctxManifest) && trim((string) ($ctxManifest['version'] ?? '')) !== '') {
-                $ctxVersionStr = trim((string) $ctxManifest['version']);
+    $result = DB::transaction(function () use (
+        $id,
+        $hasParts,
+        $hasDetail,
+        $partsRaw,
+        $detailRaw,
+        $partsClientRev,
+        $detailClientRev
+    ) {
+        $report = CcrReport::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+
+        $dirty = false;
+        $payloadChanged = false;
+        $stale = [
+            'parts' => false,
+            'detail' => false,
+        ];
+
+        // ============================
+        // Context template dari report (fallback)
+        // ============================
+        $ctxKey = trim((string) ($report->template_key ?? ''));
+        $ctxKey = ($ctxKey !== '') ? $ctxKey : null;
+
+        $ctxManifest = $ctxKey ? EngineTemplateRepo::manifest($ctxKey) : null;
+
+        $ctxVersionStr = '';
+        if (is_array($ctxManifest)) {
+            $ctxVersionStr = trim((string) ($ctxManifest['version'] ?? ''));
+        }
+        if ($ctxVersionStr === '') {
+            $ctxVersionStr = 'v' . (int) ($report->template_version ?: 1);
+        }
+
+        $ctxVersionInt = (int) ($report->template_version ?: ($this->sanitizer->toTemplateVersionInt($ctxVersionStr) ?: 1));
+
+        // ============================
+        // PARTS autosave
+        // ============================
+        if ($hasParts) {
+            $rawPartsArr = $this->sanitizer->decodeJsonInput($partsRaw);
+
+            // coba ambil template meta dari payload parts (kalau user baru pilih template)
+            [$pKey, $pVerStr, $pVerInt, $pManifest] = $this->resolveTemplateFromPayload($rawPartsArr);
+
+            if ($pKey) {
+                $ctxKey = $pKey;
+                $ctxManifest = is_array($pManifest) ? $pManifest : ($ctxKey ? EngineTemplateRepo::manifest($ctxKey) : null);
+
+                if (trim((string) $pVerStr) !== '') {
+                    $ctxVersionStr = trim((string) $pVerStr);
+                } elseif (is_array($ctxManifest) && trim((string) ($ctxManifest['version'] ?? '')) !== '') {
+                    $ctxVersionStr = trim((string) $ctxManifest['version']);
+                }
+
+                $ctxVersionInt = (int) (($pVerInt !== null) ? $pVerInt : ($this->sanitizer->toTemplateVersionInt($ctxVersionStr) ?: $ctxVersionInt));
             }
 
-            $ctxVersionInt = (int) (($pVerInt !== null) ? $pVerInt : ($this->toTemplateVersionInt($ctxVersionStr) ?: $ctxVersionInt));
-        }
+            $cleanParts = $this->sanitizer->sanitizePartsPayload($rawPartsArr, $ctxKey, $ctxVersionStr, $ctxManifest);
 
-        $cleanParts = $this->sanitizePartsPayload($rawPartsArr, $ctxKey, $ctxVersionStr, $ctxManifest);
-
-        // anti overwrite: kalau benar-benar kosong, jangan timpa DB
-        if (!empty($cleanParts)) {
-            $report->parts_payload = $cleanParts;
-            $dirty = true;
+            if (!empty($cleanParts)) {
+                $partsState = $this->worksheetService->applyWorksheetPayloadSection($report, 'parts', $cleanParts, $partsClientRev);
+                $stale['parts'] = (bool) ($partsState['stale'] ?? false);
+                if (!empty($partsState['saved'])) $dirty = true;
+                if (!empty($partsState['payload_changed'])) $payloadChanged = true;
+            }
         }
-    }
 
         // ============================
         // DETAIL autosave
-        // - normalize legacy tax_percent -> sales_tax_percent
-        // - sanitize + inject template meta dari context (kalau ada)
         // ============================
         if ($hasDetail) {
-            $rawDetailArr = $this->decodeJsonInput($detailRaw);
+            $rawDetailArr = $this->sanitizer->decodeJsonInput($detailRaw);
 
             if (isset($rawDetailArr['totals']['tax_percent']) && !isset($rawDetailArr['totals']['sales_tax_percent'])) {
                 $rawDetailArr['totals']['sales_tax_percent'] = $rawDetailArr['totals']['tax_percent'];
             }
 
-            $cleanDetail = $this->sanitizeDetailPayload($rawDetailArr, $ctxKey, $ctxVersionStr, $ctxManifest);
+            $cleanDetail = $this->sanitizer->sanitizeDetailPayload($rawDetailArr, $ctxKey, $ctxVersionStr, $ctxManifest);
 
-            // anti overwrite: kalau benar-benar kosong, jangan timpa DB
             if (!empty($cleanDetail)) {
-                $report->detail_payload = $cleanDetail;
-                $dirty = true;
+                $detailState = $this->worksheetService->applyWorksheetPayloadSection($report, 'detail', $cleanDetail, $detailClientRev);
+                $stale['detail'] = (bool) ($detailState['stale'] ?? false);
+                if (!empty($detailState['saved'])) $dirty = true;
+                if (!empty($detailState['payload_changed'])) $payloadChanged = true;
             }
         }
 
         // ============================
         // Update kolom template_key/template_version jika kita punya context
         // ============================
-        if ($ctxKey) {
+        if ($ctxKey && (
+            (string) ($report->template_key ?? '') !== (string) $ctxKey
+            || (int) ($report->template_version ?? 0) !== (int) $ctxVersionInt
+        )) {
             $report->template_key = $ctxKey;
             $report->template_version = $ctxVersionInt;
+            $dirty = true;
         }
 
         if ($dirty) {
             // export Word harus regenerasi kalau payload berubah
-            $report->docx_generated_at = null;
+            if ($payloadChanged) {
+                $report->docx_generated_at = null;
+            }
             $report->save();
         }
 
-        return response()->json([
+        return [
             'ok' => true,
             'saved' => $dirty,
+            'payload_changed' => $payloadChanged,
+            'stale' => $stale,
             'saved_at' => now()->toIso8601String(),
             'template_key' => $ctxKey,
             'template_version' => $ctxVersionInt,
-        ]);
-    }
+            'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+            'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+        ];
+    });
 
-
-        // ===========================================================
-        // applyWorksheetTemplate
-        // ===========================================================
-        public function worksheetAutosave(Request $request, int $id)
-    {
-        $report = CcrReport::findOrFail($id);
-
-        $partsJson  = $request->input('parts_payload');
-        $detailJson = $request->input('detail_payload');
-
-        if ($partsJson === null && $detailJson === null) {
-            return response()->json(['ok' => false, 'message' => 'No payload provided'], 422);
-        }
-
-        $dirty = false;
-
-        if (is_string($partsJson)) {
-            $decoded = json_decode($partsJson, true);
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
-                return response()->json(['ok' => false, 'message' => 'Invalid parts_payload JSON'], 422);
-            }
-
-            $report->parts_payload = $this->sanitizePartsPayload($decoded);
-            $dirty = true;
-
-            // optional: sync template_key dari meta
-            $meta = $report->parts_payload['meta'] ?? [];
-            if (is_array($meta)) {
-                if (!empty($meta['template_key'])) {
-                    $report->template_key = $meta['template_key'];
-                }
-                if (!empty($meta['template_version'])) {
-                    $report->template_version = $this->parseTemplateVersion($meta['template_version']);
-                }
-            }
-        }
-
-        if (is_string($detailJson)) {
-            $decoded = json_decode($detailJson, true);
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
-                return response()->json(['ok' => false, 'message' => 'Invalid detail_payload JSON'], 422);
-            }
-
-            // normalize legacy key tax_percent → sales_tax_percent
-            if (isset($decoded['totals']['tax_percent']) && !isset($decoded['totals']['sales_tax_percent'])) {
-                $decoded['totals']['sales_tax_percent'] = $decoded['totals']['tax_percent'];
-            }
-
-            $report->detail_payload = $this->sanitizeGenericPayload($decoded);
-            $dirty = true;
-        }
-
-        if ($dirty) {
-            // export Word harus regenerasi kalau payload berubah
-            $report->docx_generated_at = null;
-            $report->save();
-        }
-
-        return response()->json([
-            'ok' => true,
-            'saved_at' => now()->toIso8601String(),
-        ]);
-    }
-
-        private function parseTemplateVersion($v): ?int
-    {
-        if ($v === null) return null;
-        if (is_int($v)) return $v;
-        $s = trim((string)$v);
-        if ($s === '') return null;
-
-        // "v1" → 1
-        if (preg_match('/v(\d+)/i', $s, $m)) return (int)$m[1];
-
-        // "1" → 1
-        if (ctype_digit($s)) return (int)$s;
-
-        return null;
-    }
-
+    return response()->json($result);
+}
 
     // ===========================================================
     // DELETE ITEM
     // ===========================================================
-    public function deleteItem(CcrItem $item)
+    public function deleteItem(Request $request, CcrItem $item)
     {
+        $report = CcrReport::find($item->ccr_report_id);
+        if ($report) $this->authorize('delete', $report);
+
         $item->loadMissing(['report', 'photos']);
 
-        $reportId = $item->ccr_report_id;
-
-        foreach ($item->photos as $p) {
-            Storage::disk('public')->delete($p->path);
-            $p->delete();
+        $reportId = (int) $item->ccr_report_id;
+        $partsClientRev = $this->sanitizer->parsePayloadRevision($request->input('parts_payload_rev'));
+        $detailClientRev = $this->sanitizer->parsePayloadRevision($request->input('detail_payload_rev'));
+        if (($request->expectsJson() || $request->ajax()) && ($partsClientRev === null || $detailClientRev === null)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Payload revision wajib dikirim (parts/detail) untuk aksi hapus item.',
+            ], 422);
         }
 
-        $item->delete();
+        $mutation = DB::transaction(function () use ($reportId, $item, $partsClientRev, $detailClientRev) {
+            $report = CcrReport::query()->whereKey($reportId)->lockForUpdate()->firstOrFail();
+            $staleSections = $this->worksheetService->staleSectionsFromClientRevision($report, $partsClientRev, $detailClientRev);
+            if (!empty($staleSections)) {
+                return [
+                    'ok' => false,
+                    'stale' => true,
+                    'sections' => $staleSections,
+                    'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                    'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+                ];
+            }
 
-        CcrReport::whereKey($reportId)->update([
-            'docx_generated_at' => null,
-            'updated_at'        => now(),
-        ]);
+            $lockedItem = CcrItem::query()
+                ->where('ccr_report_id', $reportId)
+                ->whereKey((int) $item->id)
+                ->lockForUpdate()
+                ->first();
 
-        return redirect()->route('engine.edit', $reportId)
-            ->with('success', 'Item berhasil dihapus.');
+            if (!$lockedItem) {
+                return [
+                    'ok' => false,
+                    'missing' => true,
+                    'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                    'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+                ];
+            }
+
+            $lockedItem->loadMissing('photos');
+            foreach ($lockedItem->photos as $p) {
+                Storage::disk('public')->delete($p->path);
+                $p->delete();
+            }
+            $lockedItem->delete();
+
+            $report->docx_generated_at = null;
+            $report->touch();
+
+            return [
+                'ok' => true,
+                'deleted' => true,
+                'item_id' => (int) $item->id,
+                'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+            ];
+        });
+
+        if (!empty($mutation['stale'])) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Data kamu sudah stale. Refresh halaman sebelum hapus item.',
+                    'stale' => true,
+                    'sections' => $mutation['sections'] ?? [],
+                    'parts_payload_rev' => (int) ($mutation['parts_payload_rev'] ?? 0),
+                    'detail_payload_rev' => (int) ($mutation['detail_payload_rev'] ?? 0),
+                ], 409);
+            }
+
+            return back()->with('warning', 'Data sudah berubah oleh sesi lain. Refresh dulu sebelum hapus item.');
+        }
+
+        if (!empty($mutation['missing'])) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => true,
+                    'deleted' => true,
+                    'item_id' => (int) $item->id,
+                    'parts_payload_rev' => (int) ($mutation['parts_payload_rev'] ?? 0),
+                    'detail_payload_rev' => (int) ($mutation['detail_payload_rev'] ?? 0),
+                ]);
+            }
+
+            return redirect()->route('engine.edit', $reportId);
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'ok' => true,
+                'deleted' => true,
+                'item_id' => (int) ($mutation['item_id'] ?? $item->id),
+                'parts_payload_rev' => (int) ($mutation['parts_payload_rev'] ?? 0),
+                'detail_payload_rev' => (int) ($mutation['detail_payload_rev'] ?? 0),
+            ]);
+        }
+
+        return redirect()->route('engine.edit', $reportId);
     }
 
     // ===========================================================
     // DELETE PHOTO
     // ===========================================================
-    public function deletePhoto(CcrPhoto $photo)
+    public function deletePhoto(Request $request, CcrPhoto $photo)
     {
+        $report = $photo->ccrItem->ccrReport ?? null;
+        if ($report) $this->authorize('delete', $report);
+
         $photo->loadMissing('item');
 
-        $reportId = $photo->item->ccr_report_id;
+        $reportId = (int) $photo->item->ccr_report_id;
+        $partsClientRev = $this->sanitizer->parsePayloadRevision($request->input('parts_payload_rev'));
+        $detailClientRev = $this->sanitizer->parsePayloadRevision($request->input('detail_payload_rev'));
+        if (($request->expectsJson() || $request->ajax()) && ($partsClientRev === null || $detailClientRev === null)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Payload revision wajib dikirim (parts/detail) untuk aksi hapus foto.',
+            ], 422);
+        }
 
-        Storage::disk('public')->delete($photo->path);
-        $photo->delete();
+        $mutation = DB::transaction(function () use ($reportId, $photo, $partsClientRev, $detailClientRev) {
+            $report = CcrReport::query()->whereKey($reportId)->lockForUpdate()->firstOrFail();
+            $staleSections = $this->worksheetService->staleSectionsFromClientRevision($report, $partsClientRev, $detailClientRev);
+            if (!empty($staleSections)) {
+                return [
+                    'ok' => false,
+                    'stale' => true,
+                    'sections' => $staleSections,
+                    'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                    'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+                ];
+            }
 
-        CcrReport::whereKey($reportId)->update([
-            'docx_generated_at' => null,
-            'updated_at'        => now(),
-        ]);
+            $lockedPhoto = CcrPhoto::query()
+                ->whereKey((int) $photo->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$lockedPhoto) {
+                return [
+                    'ok' => false,
+                    'missing' => true,
+                    'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                    'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+                ];
+            }
+
+            Storage::disk('public')->delete($lockedPhoto->path);
+            $lockedPhoto->delete();
+
+            $report->docx_generated_at = null;
+            $report->touch();
+
+            return [
+                'ok' => true,
+                'deleted' => true,
+                'parts_payload_rev' => (int) ($report->parts_payload_rev ?? 0),
+                'detail_payload_rev' => (int) ($report->detail_payload_rev ?? 0),
+            ];
+        });
+
+        if (!empty($mutation['stale'])) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Data kamu sudah stale. Refresh halaman sebelum hapus foto.',
+                    'stale' => true,
+                    'sections' => $mutation['sections'] ?? [],
+                    'parts_payload_rev' => (int) ($mutation['parts_payload_rev'] ?? 0),
+                    'detail_payload_rev' => (int) ($mutation['detail_payload_rev'] ?? 0),
+                ], 409);
+            }
+
+            return back()->with('warning', 'Data sudah berubah oleh sesi lain. Refresh dulu sebelum hapus foto.');
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'ok' => true,
+                'deleted' => true,
+                'parts_payload_rev' => (int) ($mutation['parts_payload_rev'] ?? 0),
+                'detail_payload_rev' => (int) ($mutation['detail_payload_rev'] ?? 0),
+            ]);
+        }
 
         return redirect()->route('engine.edit', $reportId)
             ->with('success', 'Foto berhasil dihapus.');
@@ -735,15 +1187,34 @@ public function autosaveWorksheet(Request $request, int $id)
     // ===========================================================
     public function deleteMultiple(Request $request)
     {
-        $ids = $request->input('ids', []);
+        $ids = collect($request->input('ids', []))
+            ->map(fn($id) => (int) $id)
+            ->filter(fn($id) => $id > 0)
+            ->unique()->values()->all();
 
-        CcrReport::whereIn('id', $ids)->get()->each(function ($r) {
+        if (empty($ids)) {
+            return back()->with('warning', 'Tidak ada item yang dipilih.');
+        }
+
+        $reports = CcrReport::with('items.photos')
+            ->where('type', 'engine')
+            ->whereIn('id', $ids)->get();
+
+        foreach ($reports as $r) {
+            // Hapus file foto dari storage sebelum soft delete
+            foreach ($r->items as $item) {
+                foreach ($item->photos as $photo) {
+                    if (!empty($photo->path)) {
+                        Storage::disk('public')->delete($photo->path);
+                    }
+                }
+            }
             $r->purge_at = now()->addDays(7);
             $r->save();
             $r->delete();
-        });
+        }
 
-        return back()->with('success', 'Dipindahkan ke Sampah (7 hari).');
+        return back()->with('success', count($reports) . ' CCR Engine dipindahkan ke Sampah (7 hari).');
     }
 
     // PREVIEW LIHAT
@@ -757,6 +1228,10 @@ public function autosaveWorksheet(Request $request, int $id)
     public function submit(Request $request, int $id)
     {
         $report = CcrReport::findOrFail($id);
+        if (($report->type ?? null) !== 'engine') {
+            abort(404);
+        }
+        $this->authorize('submit', $report);
 
         $resubmit = $request->boolean('resubmit');
 
@@ -778,6 +1253,8 @@ public function autosaveWorksheet(Request $request, int $id)
 
         $report->save();
 
+        ActivityLogger::log($resubmit ? 'resubmit' : 'submit', $report, ['type' => 'engine', 'component' => $report->component]);
+
         $componentName = trim((string) ($report->component ?? ''));
         if ($componentName === '') $componentName = 'Engine';
 
@@ -794,22 +1271,6 @@ public function autosaveWorksheet(Request $request, int $id)
             ? 'CCR Engine berhasil di Re-submit ke Direktur.'
             : 'CCR Engine berhasil dikirim ke Direktur.'
         );
-    }
-
-    // ===========================================================
-    // Helper: decode JSON string / array dari hidden input atau request JSON
-    // NOTE: $field hanya untuk kompatibilitas pemanggilan lama (boleh diabaikan)
-    // ===========================================================
-    private function decodeJsonInput($raw, ?string $field = null): array
-    {
-        if ($raw === null) return [];
-        if (is_array($raw)) return $raw;
-
-        $raw = trim((string) $raw);
-        if ($raw === '') return [];
-
-        $data = json_decode($raw, true);
-        return is_array($data) ? $data : [];
     }
 
     // ===========================================================
@@ -834,24 +1295,11 @@ public function autosaveWorksheet(Request $request, int $id)
                 if ($versionStr === '' && $mv !== '') $versionStr = $mv;
             }
             if ($versionStr !== '') {
-                $versionInt = $this->toTemplateVersionInt($versionStr);
+                $versionInt = $this->sanitizer->toTemplateVersionInt($versionStr);
             }
         }
 
         return [$key, $versionStr, $versionInt, $manifest];
-    }
-
-    private function toTemplateVersionInt(?string $versionStr): ?int
-    {
-        $versionStr = trim((string) $versionStr);
-        if ($versionStr === '') return null;
-
-        // menerima '1', 'v1', 'V2', 'version 3', dll
-        if (preg_match('/(\d+)/', $versionStr, $m)) {
-            return max(1, (int) $m[1]);
-        }
-
-        return null;
     }
 
     // ===========================================================
@@ -872,7 +1320,7 @@ public function autosaveWorksheet(Request $request, int $id)
 
         $manifest = $defaults['manifest'];
         $versionStr = trim((string) ($manifest['version'] ?? ''));
-        $versionInt = $this->toTemplateVersionInt($versionStr) ?? ($report->template_version ?: 1);
+        $versionInt = $this->sanitizer->toTemplateVersionInt($versionStr) ?? ($report->template_version ?: 1);
 
         DB::transaction(function () use ($report, $key, $versionInt, $versionStr, $manifest, $defaults) {
             $r = CcrReport::whereKey($report->id)->lockForUpdate()->first();
@@ -884,202 +1332,21 @@ public function autosaveWorksheet(Request $request, int $id)
             $r->template_version = $versionInt;
 
             if ($partsEmpty) {
-                $r->parts_payload = $this->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
+                $r->parts_payload = $this->sanitizer->sanitizePartsPayload($defaults['parts'] ?? [], $key, $versionStr, $manifest);
             } else {
-                $r->parts_payload = $this->sanitizePartsPayload((array) $r->parts_payload, $key, $versionStr, $manifest);
+                $r->parts_payload = $this->sanitizer->sanitizePartsPayload((array) $r->parts_payload, $key, $versionStr, $manifest);
             }
 
             if ($detailEmpty) {
-                $r->detail_payload = $this->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
+                $r->detail_payload = $this->sanitizer->sanitizeDetailPayload($defaults['detail'] ?? [], $key, $versionStr, $manifest);
             } else {
-                $r->detail_payload = $this->sanitizeDetailPayload((array) $r->detail_payload, $key, $versionStr, $manifest);
+                $r->detail_payload = $this->sanitizer->sanitizeDetailPayload((array) $r->detail_payload, $key, $versionStr, $manifest);
             }
 
             $r->save();
         });
     }
 
-    // ===========================================================
-    // SANITIZE: Parts payload (jangan buang field lain)
-    // - preserve: meta, rows, styles, notes, dll
-    // - clean: angka money jadi digits-only
-    // - inject: meta.template_key + meta.template_version (+ optional meta.template)
-    // ===========================================================
-    private function sanitizePartsPayload(array $payload, ?string $templateKey = null, ?string $templateVersion = null, ?array $manifest = null): array
-    {
-        if (empty($payload)) return [];
-
-        // preserve root keys
-        $clean = $payload;
-
-        // meta
-        if (!isset($clean['meta']) || !is_array($clean['meta'])) {
-            $clean['meta'] = [];
-        }
-
-        $meta = $clean['meta'];
-
-        // normalisasi string
-        foreach ($meta as $k => $v) {
-            if (is_string($v)) $meta[$k] = trim($v);
-        }
-
-        // inject template meta (biar UI & DB sinkron)
-        if ($templateKey) {
-            $meta['template_key'] = $templateKey;
-            if ($templateVersion !== null) {
-                $meta['template_version'] = trim((string) $templateVersion);
-            }
-            // optional meta.template
-            if ($manifest && is_array($manifest)) {
-                $meta['template'] = [
-                    'key'     => (string) ($manifest['key'] ?? $templateKey),
-                    'version' => (string) ($manifest['version'] ?? $templateVersion ?? ''),
-                    'name'    => (string) ($manifest['name'] ?? ''),
-                ];
-            }
-        }
-
-        // clean meta angka
-        $metaMoneyKeys = [
-            'footer_total',
-            'footer_extended',
-        ];
-        foreach ($metaMoneyKeys as $mk) {
-            if (isset($meta[$mk])) {
-                $meta[$mk] = preg_replace('/[^\d]/', '', (string) $meta[$mk]);
-            }
-        }
-
-        // default mode kalau kosong
-        if (isset($meta['footer_total_mode'])) {
-            $m = strtolower(trim((string) $meta['footer_total_mode']));
-            $meta['footer_total_mode'] = in_array($m, ['auto', 'manual'], true) ? $m : 'auto';
-        }
-        if (isset($meta['footer_extended_mode'])) {
-            $m = strtolower(trim((string) $meta['footer_extended_mode']));
-            $meta['footer_extended_mode'] = in_array($m, ['auto', 'manual'], true) ? $m : 'auto';
-        }
-
-        $clean['meta'] = $meta;
-
-        // rows
-        if (!isset($clean['rows']) || !is_array($clean['rows'])) {
-            $clean['rows'] = [];
-        }
-
-        $moneyKeys = [
-            'purchase_price',
-            'sales_price',
-            'total',
-            'extended_price',
-            'unit_price',
-            'amount',
-            'cost',
-            'price',
-        ];
-
-        $cleanRows = [];
-        foreach ($clean['rows'] as $row) {
-            if (!is_array($row)) {
-                $cleanRows[] = [];
-                continue;
-            }
-
-            // buang _id dan key private
-            foreach (array_keys($row) as $k) {
-                if ($k === '_id' || str_starts_with((string) $k, '_')) {
-                    unset($row[$k]);
-                }
-            }
-
-            foreach ($row as $k => $v) {
-                // trim string
-                if (is_string($v)) $v = trim($v);
-
-                // qty digits-only
-                if ($k === 'qty' || $k === 'quantity') {
-                    $row[$k] = preg_replace('/[^\d]/', '', (string) $v);
-                    continue;
-                }
-
-                // money digits-only
-                if (in_array($k, $moneyKeys, true)) {
-                    $row[$k] = preg_replace('/[^\d]/', '', (string) $v);
-                    continue;
-                }
-
-                // percent keep digits + dot
-                if (str_contains((string) $k, 'percent') || str_contains((string) $k, 'pct')) {
-                    $row[$k] = preg_replace('/[^\d.]/', '', (string) $v);
-                    continue;
-                }
-
-                $row[$k] = $v;
-            }
-
-            $cleanRows[] = $row;
-        }
-
-        $clean['rows'] = $cleanRows;
-
-        // sanity: styles/notes harus array
-        if (isset($clean['styles']) && !is_array($clean['styles'])) $clean['styles'] = [];
-        if (isset($clean['notes']) && !is_array($clean['notes'])) $clean['notes'] = [];
-
-        // anti overwrite: kalau benar-benar kosong (meta kosong + rows kosong + tidak ada keys lain)
-        $hasAnyRows = is_array($clean['rows']) && count($clean['rows']) > 0;
-        $hasAnyMeta = is_array($clean['meta']) && count(array_filter($clean['meta'], fn ($v) => $v !== '' && $v !== null && $v !== [])) > 0;
-        $hasOther   = count(array_diff(array_keys($clean), ['meta', 'rows', 'styles', 'notes'])) > 0;
-
-        if (!$hasAnyRows && !$hasAnyMeta && !$hasOther) {
-            return [];
-        }
-
-        return $clean;
-    }
-
-    // ===========================================================
-    // SANITIZE: Detail payload (preserve fields; inject template meta)
-    // ===========================================================
-    private function sanitizeDetailPayload(array $payload, ?string $templateKey = null, ?string $templateVersion = null, ?array $manifest = null): array
-    {
-        if (empty($payload)) return [];
-
-        $clean = $payload;
-
-        if (!isset($clean['meta']) || !is_array($clean['meta'])) {
-            $clean['meta'] = [];
-        }
-
-        $meta = $clean['meta'];
-        foreach ($meta as $k => $v) {
-            if (is_string($v)) $meta[$k] = trim($v);
-        }
-
-        if ($templateKey) {
-            $meta['template_key'] = $templateKey;
-            if ($templateVersion !== null) {
-                $meta['template_version'] = trim((string) $templateVersion);
-            }
-            if ($manifest && is_array($manifest)) {
-                $meta['template'] = [
-                    'key'     => (string) ($manifest['key'] ?? $templateKey),
-                    'version' => (string) ($manifest['version'] ?? $templateVersion ?? ''),
-                    'name'    => (string) ($manifest['name'] ?? ''),
-                ];
-            }
-        }
-
-        $clean['meta'] = $meta;
-
-        return $clean;
-    }
-
-
-    // ===========================================================
-    // Tambahin Helper di CcrEngineController
-    // ===========================================================
     private function getEngineTemplates(): array
     {
     $list = [];

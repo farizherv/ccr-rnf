@@ -5,7 +5,7 @@
 // { meta, main_rows, painting_rows, external_rows, misc, totals }
 
 $main = [];
-for ($i = 0; $i < 6; $i++) {
+for ($i = 0; $i < 5; $i++) {
     $main[] = [
         'seg' => '',
         'code' => '',
@@ -19,7 +19,7 @@ for ($i = 0; $i < 6; $i++) {
 }
 
 $painting = [];
-for ($i = 0; $i < 6; $i++) {
+for ($i = 0; $i < 5; $i++) {
     $painting[] = [
         'item' => '',
         'qty' => '',
@@ -30,7 +30,7 @@ for ($i = 0; $i < 6; $i++) {
 }
 
 $external = [];
-for ($i = 0; $i < 8; $i++) {
+for ($i = 0; $i < 5; $i++) {
     $external[] = [
         'service' => '',
         'amount' => '',
@@ -49,8 +49,8 @@ return [
     'unit_sn' => '',
   ],
 
-  // UI: SECTION COMPONENT (min 6 rows)
-  'main_rows' => array_fill(0, 6, [
+  // UI: SECTION COMPONENT (min 5 rows)
+  'main_rows' => array_fill(0, 5, [
     'seg' => '',
     'code' => '',
     'component_desc' => '',
@@ -61,8 +61,8 @@ return [
     'parts_charge' => '',
   ]),
 
-  // UI: SECTION PAINTING (min 6 rows)
-  'painting_rows' => array_fill(0, 6, [
+  // UI: SECTION PAINTING (min 5 rows)
+  'painting_rows' => array_fill(0, 5, [
     'item' => '',
     'qty' => '',
     'uom' => '',
@@ -70,8 +70,8 @@ return [
     'total' => '',
   ]),
 
-  // UI: SECTION EXTERNAL SERVICES (min 8 rows)
-  'external_rows' => array_fill(0, 8, [
+  // UI: SECTION EXTERNAL SERVICES (min 5 rows)
+  'external_rows' => array_fill(0, 5, [
     'service' => '',
     'amount' => '',
   ]),

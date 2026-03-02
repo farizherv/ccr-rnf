@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Support\Inbox;
 use App\Models\InboxMessage;
+use Illuminate\Http\JsonResponse;
 
 class InboxController extends Controller
 {
@@ -44,6 +45,7 @@ class InboxController extends Controller
 
         $items = InboxMessage::query()
             ->where('to_user_id', $user->id)
+            ->whereNull('deleted_at')
             ->orderByDesc('id')
             ->limit(8)
             ->get(['id','title','message','url','is_read','created_at']);
@@ -86,6 +88,31 @@ class InboxController extends Controller
             ->delete();
 
         return back()->with('success', 'Notifikasi yang sudah dibaca berhasil dihapus.');
+    }
+
+    public function testSelf(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['ok' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $title = trim((string) $request->input('title', 'CCR Test Notification'));
+        $message = trim((string) $request->input('message', 'Test notification dari sistem.'));
+        $url = trim((string) $request->input('url', '/inbox'));
+
+        Inbox::toUser((int) $user->id, [
+            'from_user_id' => (int) $user->id,
+            'type' => 'ccr_submitted',
+            'title' => $title !== '' ? $title : 'CCR Test Notification',
+            'message' => $message !== '' ? $message : 'Test notification dari sistem.',
+            'url' => str_starts_with($url, '/') ? $url : '/inbox',
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Test notification queued',
+        ]);
     }
 
 }

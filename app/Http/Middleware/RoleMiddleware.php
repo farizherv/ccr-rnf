@@ -17,7 +17,7 @@ class RoleMiddleware
         }
 
         // ✅ normalisasi role user (anti DIRECTOR vs director)
-        $userRole = strtolower(trim((string) $user->role));
+        $userRole = $user->role instanceof \App\Enums\UserRole ? $user->role->value : strtolower(trim((string) $user->role));
 
         // ✅ normalisasi role allowed (support role:admin,director)
         $allowed = [];
@@ -48,10 +48,9 @@ class RoleMiddleware
             // kalau ada previous url, pakai itu. kalau gak ada, pakai fallback aman.
             $fallback = '/'; // aman pasti ada
 
-            // kalau kamu punya route menu edit CCR yang benar, taruh di sini:
-            // contoh: ccr.edit.menu atau ccr.edit.index atau trash.menu, dll.
-            if (Route::has('ccr.edit.menu')) {
-                $fallback = route('ccr.edit.menu');
+            // fallback ke beranda CCR jika tersedia.
+            if (Route::has('ccr.index')) {
+                $fallback = route('ccr.index');
             } elseif (Route::has('ccr.edit.index')) {
                 $fallback = route('ccr.edit.index');
             } elseif (Route::has('ccr.edit')) {

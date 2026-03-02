@@ -1,6 +1,6 @@
 {{-- =========================================================
 TAB: DETAIL WORKSHEET (SHEET DETAIL TEMPLATE)
-File: resources/views/engine/partials/detail.blade.php
+File: resources/views/engine/partials/detail_worksheet.blade.php
 ========================================================= --}}
 
 @php
@@ -9,6 +9,7 @@ File: resources/views/engine/partials/detail.blade.php
   // =========================================================
   $reportObj = $report ?? null;
   $reportId  = $reportObj?->id;
+  $initialPayloadRev = $reportObj ? max(0, (int) ($reportObj->detail_payload_rev ?? 0)) : 0;
 
   $payload = $reportObj ? ($reportObj->detail_payload ?? []) : [];
 
@@ -16,6 +17,13 @@ File: resources/views/engine/partials/detail.blade.php
   if (is_string($payload)) {
     $decoded = json_decode($payload, true);
     if (is_array($decoded)) $payload = $decoded;
+  }
+  $draftSeedDetailPayload = (isset($draftSeedDetailPayload) && is_array($draftSeedDetailPayload))
+    ? $draftSeedDetailPayload
+    : [];
+  $skipLocalDraftLoad = isset($skipLocalDraftLoad) ? (bool) $skipLocalDraftLoad : false;
+  if (!$reportObj && empty($payload) && !empty($draftSeedDetailPayload)) {
+    $payload = $draftSeedDetailPayload;
   }
   if (!is_array($payload)) $payload = [];
 
@@ -114,8 +122,8 @@ File: resources/views/engine/partials/detail.blade.php
 
   $autosaveUrl = $reportId ? route('engine.worksheet.autosave', ['id' => $reportId]) : null;
 
-  // ✅ Role policy: Operator = read-only
-  $readOnly = strtolower(trim((string) (auth()->user()->role ?? ''))) === 'operator';
+  // ✅ Policy parity with seat: editable in create/edit flow
+  $readOnly = false;
 @endphp
 
 
@@ -132,7 +140,9 @@ File: resources/views/engine/partials/detail.blade.php
         initialTotals: @js($totals),
 
         storageKey: @js($storageKey),
+        skipLocalDraftLoad: @js($skipLocalDraftLoad),
         reportId: @js($reportId),
+        initialPayloadRev: @js($initialPayloadRev),
         autosaveUrl: @js($autosaveUrl),
         csrf: @js(csrf_token()),
      })"
@@ -147,8 +157,8 @@ File: resources/views/engine/partials/detail.blade.php
     @endforeach
   </datalist>
 
-  <h3 style="margin-bottom:6px;">Detail Worksheet</h3>
-  <p style="font-size:13px; color:#64748b; margin-bottom:14px;">
+  <h3 x-show="!isFs" x-cloak style="margin-bottom:6px;">Detail Worksheet</h3>
+  <p x-show="!isFs" x-cloak style="font-size:13px; color:#64748b; margin-bottom:14px;">
     Template “Sheet Detail” (Autosave). Formula dasar aktif;
   </p>
 
@@ -158,11 +168,39 @@ File: resources/views/engine/partials/detail.blade.php
     Role <b>Operator</b> hanya bisa melihat (read-only).
   </div>
 
-  {{-- TOP BAR: autosave + zoom --}}
+  {{-- TOP BAR: autosave + actions + zoom --}}
   <div class="dw-topbar">
     <div class="dw-topbar__left">
       <span class="dw-badge" x-text="saveStatus"></span>
       <span class="dw-small" x-text="readOnly ? 'Read-only' : 'AutoSave ON'"></span>
+
+      <span class="dw-divider">|</span>
+
+      <button type="button"
+              class="dw-btn dw-btn--primary"
+              @click="addRow()"
+              :disabled="readOnly">
+        + Tambah Baris
+      </button>
+
+      <button type="button"
+              class="dw-btn dw-btn--danger"
+              @click="deleteLastRow()"
+              :disabled="readOnly">
+        Hapus Terakhir
+      </button>
+
+      <div class="dw-target">
+        <span class="dw-target__label">Target</span>
+        <select class="dw-select" x-model="rowTarget" :disabled="readOnly">
+          <option value="main">COMPONENT</option>
+          <option value="painting">PAINTING</option>
+          <option value="external">External Services</option>
+        </select>
+      </div>
+
+      <span class="dw-divider">|</span>
+      <div class="dw-cellinfo">Cell: <b x-text="cellLabel()"></b></div>
     </div>
 
     <div class="dw-topbar__right">
@@ -176,44 +214,6 @@ File: resources/views/engine/partials/detail.blade.php
       <button type="button" class="dw-pct" @click="zoomReset()">
         <span x-text="zoom + '%'"></span>
       </button>
-    </div>
-  </div>
-
-  {{-- ACTIONS --}}
-  <div class="dw-actions">
-    <button type="button"
-            class="dw-btn dw-btn--primary"
-            @click="addRow()"
-            :disabled="readOnly">
-      + Tambah Baris
-    </button>
-
-    <button type="button"
-            class="dw-btn dw-btn--danger"
-            @click="deleteLastRow()"
-            :disabled="readOnly">
-      Hapus Terakhir
-    </button>
-
-    <div class="dw-target">
-      <span class="dw-target__label">Target</span>
-      <select class="dw-select" x-model="rowTarget" :disabled="readOnly">
-        <option value="main">COMPONENT</option>
-        <option value="painting">PAINTING</option>
-        <option value="external">External Services</option>
-      </select>
-    </div>
-
-    <div class="dw-tip">
-      Enter → kanan • Tab/Shift+Tab → kanan/kiri • Arrow ↑↓←→ → pindah cell (khusus area MAIN)
-    </div>
-  </div>
-
-  <div class="dw-subbar">
-    <div class="dw-subbar__left">
-      <div class="dw-cellinfo">
-        Cell: <b x-text="cellLabel()"></b>
-      </div>
     </div>
   </div>
 
@@ -872,7 +872,8 @@ File: resources/views/engine/partials/detail.blade.php
   </div>
 
   {{-- hidden JSON payload --}}
-  <input type="hidden" name="detail_payload" :value="jsonPayload()">
+  <input type="hidden" name="detail_payload" x-ref="detailPayloadInput" :value="jsonPayload()">
+  <input type="hidden" name="detail_payload_rev" x-ref="detailPayloadRevInput" :value="payloadRev">
 </div>
 
 <style>
@@ -1129,7 +1130,9 @@ File: resources/views/engine/partials/detail.blade.php
 document.addEventListener('alpine:init', () => {
   Alpine.data('detailWS', (cfg) => ({
     storageKey: cfg.storageKey || ('ccr_detail_ws_' + window.location.pathname),
+    skipLocalDraftLoad: !!cfg.skipLocalDraftLoad,
     reportId: cfg.reportId || null,
+    payloadRev: Number(cfg.initialPayloadRev || 0),
     autosaveUrl: cfg.autosaveUrl || '',
     csrf: cfg.csrf || (document.querySelector('meta[name=csrf-token]')?.content || ''),
     dbHasPayload: !!cfg.dbHasPayload,
@@ -1237,7 +1240,7 @@ document.addEventListener('alpine:init', () => {
         totals: (cfg.initialTotals && typeof cfg.initialTotals === 'object') ? cfg.initialTotals : {},
       };
 
-      const d = this.loadDraft();
+      const d = this.skipLocalDraftLoad ? null : this.loadDraft();
       const canUseDraft = (d && typeof d === 'object') && (
         (d.meta && typeof d.meta === 'object') ||
         (Array.isArray(d.main_rows) && d.main_rows.length) ||
@@ -1282,9 +1285,7 @@ document.addEventListener('alpine:init', () => {
         this.saveStatus = 'Auto-saved ' + this.formatTime(new Date());
       }
 
-      // ✅ default model
       if (!this.meta || typeof this.meta !== 'object') this.meta = {};
-      if (!this.meta.model) this.meta.model = 'ENGINE';
 
       // compat: template lama pakai sales_tax_percent
       if (this.totals && (this.totals.tax_percent === undefined || this.totals.tax_percent === null || this.totals.tax_percent === '') && this.totals.sales_tax_percent !== undefined) {
@@ -1309,6 +1310,7 @@ document.addEventListener('alpine:init', () => {
         this.applyZoom();
         this.focusCell(0, 1);
         this.applyReadOnlyDom();
+        this.writePayloadInput();
         if (this.readOnly) this.saveStatus = 'Read-only';
       });
 
@@ -1319,7 +1321,17 @@ document.addEventListener('alpine:init', () => {
       };
       window.addEventListener('beforeunload', this._onBeforeUnload);
 
+      this._onForceSave = () => {
+        this.flushPendingSave(true);
+      };
+      window.addEventListener('ccr:engine-force-save', this._onForceSave);
+
       this.bindClearOnSubmit();
+
+      if (!this.reportId) {
+        this._createCollectDetailPayload = () => this.flushPendingSave(true);
+        window.__engineCreateCollectDetailPayload = this._createCollectDetailPayload;
+      }
 
       // listen template apply dari Parts Worksheet (langsung update Detail)
       this._onTemplateApplied = (ev) => {
@@ -1359,8 +1371,12 @@ document.addEventListener('alpine:init', () => {
         }
 
         if (this._onBeforeUnload) window.removeEventListener('beforeunload', this._onBeforeUnload);
+        if (this._onForceSave) window.removeEventListener('ccr:engine-force-save', this._onForceSave);
         if (this._onTemplateApplied) window.removeEventListener('ccr:engineTemplateApplied', this._onTemplateApplied);
         if (this._onPartsSync) this._partsSyncEvents.forEach(name => window.removeEventListener(name, this._onPartsSync));
+        if (window.__engineCreateCollectDetailPayload === this._createCollectDetailPayload) {
+          delete window.__engineCreateCollectDetailPayload;
+        }
       } catch(e) {}
     },
 
@@ -1371,6 +1387,7 @@ document.addEventListener('alpine:init', () => {
       form.__detailWsClearBound = true;
 
       form.addEventListener('submit', () => {
+        this.flushPendingSave(true);
         try { localStorage.removeItem(this.storageKey); } catch(e) {}
       });
     },
@@ -1431,8 +1448,6 @@ document.addEventListener('alpine:init', () => {
       this.externalRows = extRows.map(r => this.makeExtRow(r));
 
       this.rowTarget = 'main';
-
-      if (!this.meta.model) this.meta.model = 'ENGINE';
 
       if (this.totals && (this.totals.tax_percent === undefined || this.totals.tax_percent === null || this.totals.tax_percent === '') && this.totals.sales_tax_percent !== undefined) {
         this.totals.tax_percent = this.totals.sales_tax_percent;
@@ -1736,6 +1751,19 @@ document.addEventListener('alpine:init', () => {
     },
 
     /* ===== autosave Local + DB ===== */
+    flushPendingSave(force = false) {
+      if (this.readOnly) return;
+      clearTimeout(this._tSave);
+      const payload = this.payloadObject();
+      payload.ts = Date.now();
+      this.writePayloadInput(payload);
+      this.saveDraft(true, payload);
+      this.emitCreateDraft(payload);
+      if (force || this.reportId) {
+        this.saveRemote(true, payload);
+      }
+    },
+
     onChanged() {
       this.recalcAll();
 
@@ -1745,14 +1773,33 @@ document.addEventListener('alpine:init', () => {
         return;
       }
 
+      // Keep hidden input in sync immediately so form submit never misses latest values.
+      this.writePayloadInput();
+
       clearTimeout(this._tSave);
       this.saveStatus = 'Saving...';
       this._tSave = setTimeout(() => {
         const payload = this.payloadObject();
         payload.ts = Date.now();
+        this.writePayloadInput(payload);
         this.saveDraft(true, payload);
         this.saveRemote(true, payload);
+        this.emitCreateDraft(payload);
       }, 900);
+    },
+
+    emitCreateDraft(payload = null) {
+      if (this.reportId) return;
+      const p = payload && typeof payload === 'object' ? payload : this.payloadObject();
+      try {
+        window.dispatchEvent(new CustomEvent('ccr:create-draft-section', {
+          detail: {
+            type: 'engine',
+            section: 'detail',
+            payload: p,
+          },
+        }));
+      } catch (e) {}
     },
 
     saveDraft(isAuto = false, payload = null) {
@@ -1785,12 +1832,23 @@ document.addEventListener('alpine:init', () => {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': this.csrf,
           },
-          body: JSON.stringify({ detail_payload: p }),
+          body: JSON.stringify({
+            detail_payload: p,
+            detail_payload_rev: Number(this.payloadRev || 0),
+          }),
         });
 
         if (seq !== this._saveSeq) return;
 
         if (!res.ok) throw new Error('autosave http ' + res.status);
+        const json = await res.json().catch(() => ({}));
+        if (json && typeof json === 'object' && Number.isFinite(Number(json.detail_payload_rev))) {
+          this.payloadRev = Number(json.detail_payload_rev || 0);
+        }
+        if (json && json.stale && json.stale.detail) {
+          this.saveStatus = 'AutoSave stale skipped (Detail)';
+          return;
+        }
         this.saveStatus = (isAuto ? 'Auto-saved (DB)' : 'Saved (DB)') + ' ' + new Date().toLocaleTimeString();
       } catch (e) {
         console.warn('saveRemote failed', e);
@@ -2002,6 +2060,13 @@ document.addEventListener('alpine:init', () => {
         misc: this.misc || {},
         totals: this.totals || {},
       };
+    },
+
+    writePayloadInput(payload = null){
+      const input = this.$refs.detailPayloadInput;
+      if (!input) return;
+      const p = (payload && typeof payload === 'object') ? payload : this.payloadObject();
+      input.value = JSON.stringify(p);
     },
 
     jsonPayload(){

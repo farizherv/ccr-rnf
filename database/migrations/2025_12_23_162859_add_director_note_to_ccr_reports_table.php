@@ -7,22 +7,23 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
+        if (Schema::hasTable('inbox_messages')) {
+            return;
+        }
+
         Schema::create('inbox_messages', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('to_user_id')->nullable();
-            $table->string('to_role')->nullable(); // admin/operator/director
             $table->unsignedBigInteger('from_user_id')->nullable();
-
-            $table->string('type')->nullable();
-            $table->string('title');
+            $table->string('type', 60)->default('info');
+            $table->string('title', 160);
             $table->text('message')->nullable();
-            $table->string('url')->nullable();
-
-            $table->timestamp('read_at')->nullable();
+            $table->string('url', 255)->nullable();
+            $table->boolean('is_read')->default(false);
             $table->timestamps();
 
-            $table->index(['to_user_id', 'read_at']);
-            $table->index(['to_role', 'read_at']);
+            $table->index(['to_user_id', 'is_read']);
+            $table->index('type');
         });
     }
 

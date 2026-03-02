@@ -20,6 +20,8 @@ class InboxMessage extends Model
 
     protected $casts = [
         'is_read' => 'boolean',
+        'deleted_at' => 'datetime',
+        'read_at' => 'datetime',
     ];
 
     public function toUser()

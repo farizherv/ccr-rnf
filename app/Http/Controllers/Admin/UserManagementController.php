@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -25,17 +26,18 @@ class UserManagementController extends Controller
     public function store(Request $request)
     {
         // Admin tidak boleh bikin director
-        if (auth()->user()->role === 'admin' && $request->role === 'director') {
+        if (auth()->user()->role === UserRole::Admin && $request->role === 'director') {
             abort(403);
         }
 
         $data = $request->validate([
             'name'     => ['required','string','max:120'],
             'username' => ['required','string','max:60', Rule::unique('users','username')],
-            'role'     => ['required', Rule::in(['operator','admin','director'])],
-
-            // ✅ sesuai request: password bebas (tanpa min, tanpa confirmed)
-            'password' => ['required','string','max:255'],
+            'role'     => ['required', Rule::in(UserRole::values())],
+            'password' => ['required','string','min:8','max:255','regex:/[A-Z]/','regex:/[0-9]/'],
+        ], [
+            'password.min'   => 'Password minimal 8 karakter.',
+            'password.regex'  => 'Password harus mengandung minimal 1 huruf besar dan 1 angka.',
         ]);
 
         // ✅ email dummy aman & tidak bentrok
@@ -57,7 +59,7 @@ class UserManagementController extends Controller
 
     public function edit(User $user)
     {
-        if (auth()->user()->role === 'admin' && $user->role === 'director') {
+        if (auth()->user()->role === UserRole::Admin && $user->role === UserRole::Director) {
             abort(403);
         }
 
@@ -66,18 +68,16 @@ class UserManagementController extends Controller
 
     public function update(Request $request, User $user)
     {
-        if (auth()->user()->role === 'admin') {
-            if ($user->role === 'director') abort(403);
+        if (auth()->user()->role === UserRole::Admin) {
+            if ($user->role === UserRole::Director) abort(403);
             if ($request->role === 'director') abort(403);
         }
 
         $data = $request->validate([
             'name'     => ['required','string','max:120'],
             'username' => ['required','string','max:60', Rule::unique('users','username')->ignore($user->id)],
-            'role'     => ['required', Rule::in(['operator','admin','director'])],
-
-            // ✅ password opsional saat edit (bebas, tanpa confirmed)
-            'password' => ['nullable','string','max:255'],
+            'role'     => ['required', Rule::in(UserRole::values())],
+            'password' => ['nullable','string','min:8','max:255','regex:/[A-Z]/','regex:/[0-9]/'],
         ]);
 
         $user->name = $data['name'];
@@ -100,7 +100,7 @@ class UserManagementController extends Controller
     public function destroy(User $user)
     {   
     // hanya admin yang boleh hapus (kalau kamu punya role system)
-    if (auth()->user()->role !== 'admin') {
+    if (auth()->user()->role !== UserRole::Admin) {
         return back()->with('error', 'Anda tidak punya akses untuk menghapus user.');
     }
 
@@ -110,7 +110,7 @@ class UserManagementController extends Controller
     }
 
     // tidak boleh hapus admin terakhir
-    $isAdmin = ($user->role === 'admin');
+    $isAdmin = ($user->role === UserRole::Admin);
     if ($isAdmin) {
         $adminCount = User::where('role', 'admin')->count();
         if ($adminCount <= 1) {

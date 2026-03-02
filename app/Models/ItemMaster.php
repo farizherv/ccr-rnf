@@ -16,11 +16,13 @@ class ItemMaster extends Model
         'item',
         'purchase_price',
         'sales_price',
+        'photo_paths',
     ];
 
     protected $casts = [
         'no' => 'integer',
         'purchase_price' => 'integer',
         'sales_price' => 'integer',
+        'photo_paths' => 'array',
     ];
 }

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Jobs\DispatchInboxAlertJob;
 use App\Models\InboxMessage;
 use App\Models\User;
 
@@ -32,7 +33,7 @@ class Inbox
             ->where('id', $id)
             ->where('to_user_id', $user->id)
             ->whereNull('deleted_at')          // ✅ penting
-            ->update(['is_read' => true]);
+            ->update(['is_read' => true, 'read_at' => now()]);
     }
 
     public static function markAllRead(User $user): void
@@ -41,7 +42,7 @@ class Inbox
             ->where('to_user_id', $user->id)
             ->whereNull('deleted_at')          // ✅ penting
             ->where('is_read', false)
-            ->update(['is_read' => true]);
+            ->update(['is_read' => true, 'read_at' => now()]);
     }
 
     // ✅ Clear all: soft delete + tandai read biar badge ikut turun
@@ -53,13 +54,14 @@ class Inbox
             ->update([
                 'deleted_at' => now(),
                 'is_read'    => true,          // ✅ biar unreadCount jadi 0
+                'read_at'    => now(),
                 'updated_at' => now(),
             ]);
     }
 
     public static function toUser(int $toUserId, array $data): InboxMessage
     {
-        return InboxMessage::create([
+        $message = InboxMessage::create([
             'to_user_id'   => $toUserId,
             'from_user_id' => $data['from_user_id'] ?? null,
             'type'         => $data['type'] ?? 'info',
@@ -68,6 +70,14 @@ class Inbox
             'url'          => $data['url'] ?? null,
             'is_read'      => false,
         ]);
+
+        if ((bool) config('ccr_notifications.mail_enabled', true) || (bool) config('ccr_notifications.web_push_enabled', false)) {
+            DispatchInboxAlertJob::dispatch((int) $message->id)
+                ->onQueue((string) config('ccr_notifications.queue', 'ccr-notify'))
+                ->afterCommit();
+        }
+
+        return $message;
     }
 
     public static function toRoles(array $roles, array $data, ?int $fromUserId = null): int
