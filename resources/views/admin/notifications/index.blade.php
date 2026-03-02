@@ -5,9 +5,6 @@
 @php
     $recipients = $recipients ?? collect();
     $maxRecipients = (int) ($maxRecipients ?? 100);
-    $users = $users ?? collect();
-    $availableUsers = $availableUsers ?? collect();
-    $usersByEmail = $users->mapWithKeys(fn($user) => [strtolower(trim((string) $user->email)) => $user]);
     $listEditMode = $errors->any();
 @endphp
 
@@ -20,7 +17,7 @@
         <div class="head-left">
             <h1 class="title">Setting Email Notifikasi CCR</h1>
             <p class="subtitle">
-                Atur email akun user untuk menerima notifikasi <b>waiting</b>, <b>approved</b>, dan <b>rejected</b>.
+                Atur email untuk menerima notifikasi <b>waiting</b>, <b>approved</b>, dan <b>rejected</b>.
             </p>
         </div>
         <div class="meta-pill">{{ $recipients->count() }} / {{ $maxRecipients }} recipient</div>
@@ -34,28 +31,14 @@
 
             <div class="grid">
                 <div class="field">
-                    <label for="addUserId">Akun User</label>
-                    <select id="addUserId" name="user_id" class="input js-user-select" data-email-target="addEmail" data-role-target="addRoleBadge" required>
-                        <option value="">Pilih nama akun user</option>
-                        @foreach($availableUsers as $user)
-                            <option
-                                value="{{ $user->id }}"
-                                data-email="{{ strtolower(trim((string) $user->email)) }}"
-                                data-role="{{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }}"
-                                @selected((string) old('user_id') === (string) $user->id)
-                            >
-                                {{ $user->name }} ({{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="field">
                     <label for="addEmail">Email</label>
                     <input id="addEmail" type="email" name="email" class="input" value="{{ old('email') }}" placeholder="email@example.com" required>
-                    <div class="meta-row">Role: <span id="addRoleBadge" class="role-pill role-empty">-</span></div>
+                </div>
+                <div class="field">
+                    <label for="addName">Nama (opsional)</label>
+                    <input id="addName" type="text" name="name" class="input" value="{{ old('name') }}" placeholder="Nama penerima">
                 </div>
             </div>
-            <p class="hint-text">Email otomatis terisi dari akun user, tapi bisa diubah manual.</p>
 
             <div class="flag-row">
                 <label class="flag"><input type="hidden" name="notify_waiting" value="0"><input id="addNotifyWaiting" type="checkbox" name="notify_waiting" value="1" {{ old('notify_waiting', '1') ? 'checked' : '' }}> Waiting</label>
@@ -95,8 +78,6 @@
                 <div class="rows {{ $listEditMode ? '' : 'is-locked' }}">
                     @foreach($recipients as $recipient)
                         @php
-                            $recipientUser = $usersByEmail->get(strtolower(trim((string) $recipient->email)));
-                            $selectedUserId = old('recipients.' . $recipient->id . '.user_id', optional($recipientUser)->id);
                             $checkedWaiting = (bool) old('recipients.' . $recipient->id . '.notify_waiting', $recipient->notify_waiting ? 1 : 0);
                             $checkedApproved = (bool) old('recipients.' . $recipient->id . '.notify_approved', $recipient->notify_approved ? 1 : 0);
                             $checkedRejected = (bool) old('recipients.' . $recipient->id . '.notify_rejected', $recipient->notify_rejected ? 1 : 0);
@@ -108,47 +89,28 @@
                                 <input type="hidden" id="delete-flag-{{ $recipient->id }}" name="recipients[{{ $recipient->id }}][_delete]" value="{{ $markedDelete ? 1 : 0 }}">
                                 <div class="grid">
                                     <div class="field">
-                                        <label for="user-{{ $recipient->id }}">Akun User</label>
-                                        <select
-                                            id="user-{{ $recipient->id }}"
-                                            name="recipients[{{ $recipient->id }}][user_id]"
-                                            class="input js-user-select"
-                                            data-email-target="email-{{ $recipient->id }}"
-                                            data-role-target="role-{{ $recipient->id }}"
-                                            required
-                                            @disabled(!$listEditMode)
-                                        >
-                                            <option value="">Pilih nama akun user</option>
-                                            @foreach($users as $user)
-                                                <option
-                                                    value="{{ $user->id }}"
-                                                    data-email="{{ strtolower(trim((string) $user->email)) }}"
-                                                    data-role="{{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }}"
-                                                    @selected((string) $selectedUserId === (string) $user->id)
-                                                >
-                                                    {{ $user->name }} ({{ strtoupper($user->role instanceof \App\Enums\UserRole ? $user->role->value : (string) $user->role) }})
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                    <div class="field">
                                         <label for="email-{{ $recipient->id }}">Email</label>
                                         <input
                                             id="email-{{ $recipient->id }}"
                                             type="email"
                                             name="recipients[{{ $recipient->id }}][email]"
                                             class="input"
-                                            value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) ($recipient->email ?: ($recipientUser->email ?? ''))))) }}"
+                                            value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) $recipient->email))) }}"
                                             @disabled(!$listEditMode)
                                             required
                                         >
-                                        <div class="meta-row">
-                                            Role:
-                                            <span id="role-{{ $recipient->id }}" class="role-pill {{ $recipientUser ? '' : 'role-empty' }}">
-                                                @php $roleDisplay = $recipientUser ? ($recipientUser->role instanceof \App\Enums\UserRole ? $recipientUser->role->value : (string) $recipientUser->role) : '-'; @endphp
-                                                {{ strtoupper($roleDisplay) }}
-                                            </span>
-                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label for="name-{{ $recipient->id }}">Nama</label>
+                                        <input
+                                            id="name-{{ $recipient->id }}"
+                                            type="text"
+                                            name="recipients[{{ $recipient->id }}][name]"
+                                            class="input"
+                                            value="{{ old('recipients.' . $recipient->id . '.name', (string) ($recipient->name ?? '')) }}"
+                                            @disabled(!$listEditMode)
+                                            placeholder="Nama penerima"
+                                        >
                                     </div>
                                 </div>
 
@@ -259,34 +221,10 @@
     color:#fff;
 }
 [data-page="notification-recipients"] .grid{
-    display:grid;grid-template-columns:1.2fr 1fr;gap:12px;
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;
 }
 [data-page="notification-recipients"] .field{ display:flex;flex-direction:column;gap:7px;min-width:0; }
 [data-page="notification-recipients"] .field label{ font-size:13px;font-weight:900;color:#1f2937; }
-[data-page="notification-recipients"] .meta-row{
-    margin-top:2px;
-    color:#64748b;
-    font-size:12px;
-    font-weight:800;
-    display:flex;
-    align-items:center;
-    gap:8px;
-}
-[data-page="notification-recipients"] .role-pill{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    border-radius:999px;
-    border:1px solid #cfd9e8;
-    background:#fff;
-    padding:3px 9px;
-    font-size:11px;
-    font-weight:900;
-    color:#334155;
-}
-[data-page="notification-recipients"] .role-empty{
-    color:#94a3b8;
-}
 [data-page="notification-recipients"] .input{
     width:100%;min-height:44px;border-radius:12px;border:1px solid #cfd9e8;background:#fff;padding:10px 12px;
     font-size:15px;color:#0f172a;outline:none;
@@ -297,12 +235,6 @@
 [data-page="notification-recipients"] .flag-row{
     display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;
 }
-[data-page="notification-recipients"] .hint-text{
-    margin:10px 0 0;
-    color:#64748b;
-    font-size:12px;
-    font-weight:700;
-}
 [data-page="notification-recipients"] .flag{
     display:inline-flex;align-items:center;gap:7px;border:1px solid #d3dce9;background:#fff;
     border-radius:999px;padding:8px 12px;font-size:13px;font-weight:800;color:#334155;
@@ -310,8 +242,7 @@
 [data-page="notification-recipients"] .actions{
     margin-top:12px;display:flex;align-items:center;justify-content:flex-end;
 }
-[data-page="notification-recipients"] .btn-save,
-[data-page="notification-recipients"] .btn-update{
+[data-page="notification-recipients"] .btn-save{
     border:0;cursor:pointer;min-height:40px;padding:0 14px;border-radius:10px;font-size:14px;font-weight:900;color:#fff;
     background:#1f6fe5;box-shadow:0 10px 20px rgba(31,111,229,.24);
 }
@@ -396,57 +327,12 @@
     const page = document.querySelector('[data-page="notification-recipients"]');
     if (!page) return;
 
-    const applySelectionMeta = (selectEl, opts) => {
-        if (!selectEl) return;
-        const skipEmail = opts && opts.skipEmail;
-        const selected = selectEl.options[selectEl.selectedIndex];
-        const emailTargetId = selectEl.dataset.emailTarget || '';
-        const roleTargetId = selectEl.dataset.roleTarget || '';
-        const emailInput = emailTargetId ? document.getElementById(emailTargetId) : null;
-        const roleNode = roleTargetId ? document.getElementById(roleTargetId) : null;
-
-        const email = selected ? (selected.dataset.email || '') : '';
-        const role = selected ? (selected.dataset.role || '') : '';
-
-        if (emailInput && !skipEmail) emailInput.value = email;
-        if (roleNode) {
-            roleNode.textContent = role || '-';
-            roleNode.classList.toggle('role-empty', !role);
-        }
-    };
-
-    const applyDefaultFlagsByRole = (roleUpper) => {
-        const waiting = document.getElementById('addNotifyWaiting');
-        const approved = document.getElementById('addNotifyApproved');
-        const rejected = document.getElementById('addNotifyRejected');
-        if (!waiting || !approved || !rejected) return;
-
-        const role = (roleUpper || '').toUpperCase();
-        if (role === 'DIRECTOR') {
-            waiting.checked = true;
-            approved.checked = false;
-            rejected.checked = false;
-            return;
-        }
-
-        if (role === 'ADMIN' || role === 'OPERATOR') {
-            waiting.checked = false;
-            approved.checked = true;
-            rejected.checked = true;
-            return;
-        }
-
-        waiting.checked = true;
-        approved.checked = true;
-        rejected.checked = true;
-    };
-
     const listBox = page.querySelector('.list-box');
     const toggleRecipientsEditBtn = page.querySelector('#toggleRecipientsEdit');
     const listRows = listBox ? listBox.querySelector('.rows') : null;
     const bulkUpdateForm = document.getElementById('bulkUpdateRecipientsForm');
     const editableNodes = listBox
-        ? Array.from(listBox.querySelectorAll('.row-item select, .row-item input[type=\"checkbox\"], .row-item input[type=\"email\"], .row-item .btn-delete'))
+        ? Array.from(listBox.querySelectorAll('.row-item input[type="checkbox"], .row-item input[type="email"], .row-item input[type="text"], .row-item .btn-delete'))
         : [];
     const markDeleteButtons = listBox
         ? Array.from(listBox.querySelectorAll('.js-mark-delete'))
@@ -485,24 +371,6 @@
             toggleRecipientsEditBtn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
         }
     };
-
-    page.querySelectorAll('.js-user-select').forEach((selectEl) => {
-        const isAddForm = selectEl.id === 'addUserId';
-        // On page load: only auto-fill email for the add form, NOT for existing rows
-        applySelectionMeta(selectEl, { skipEmail: !isAddForm });
-        if (isAddForm) {
-            const selected = selectEl.options[selectEl.selectedIndex];
-            applyDefaultFlagsByRole(selected ? (selected.dataset.role || '') : '');
-        }
-        // On change: always auto-fill email (user is actively switching)
-        selectEl.addEventListener('change', () => {
-            applySelectionMeta(selectEl);
-            if (isAddForm) {
-                const selected = selectEl.options[selectEl.selectedIndex];
-                applyDefaultFlagsByRole(selected ? (selected.dataset.role || '') : '');
-            }
-        });
-    });
 
     markDeleteButtons.forEach((btn) => {
         const recipientId = btn.dataset.recipientId || '';

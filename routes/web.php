@@ -243,7 +243,6 @@ Route::middleware(['auth', 'throttle:500,1'])->group(function () {
             Route::get('/', [NotificationRecipientController::class, 'index'])->name('index');
             Route::post('/', [NotificationRecipientController::class, 'store'])->name('store');
             Route::post('/bulk-update', [NotificationRecipientController::class, 'bulkUpdate'])->name('bulkUpdate');
-            Route::put('/{recipient}', [NotificationRecipientController::class, 'update'])->name('update');
             Route::delete('/{recipient}', [NotificationRecipientController::class, 'destroy'])->name('destroy');
         });
 

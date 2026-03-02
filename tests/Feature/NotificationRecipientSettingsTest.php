@@ -44,18 +44,6 @@ class NotificationRecipientSettingsTest extends TestCase
     public function test_admin_can_crud_notification_recipients(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
-        $opsUser = User::withoutEvents(function () {
-            return User::factory()->create([
-                'role' => 'operator',
-                'email' => 'notify.ops@example.com',
-            ]);
-        });
-        $directorUser = User::withoutEvents(function () {
-            return User::factory()->create([
-                'role' => 'director',
-                'email' => 'notify.director@example.com',
-            ]);
-        });
 
         $this->actingAs($admin)
             ->get(route('admin.notifications.index'))
@@ -63,7 +51,8 @@ class NotificationRecipientSettingsTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('admin.notifications.store'), [
-                'user_id' => (int) $opsUser->id,
+                'email' => 'notify.ops@example.com',
+                'name' => 'Ops User',
                 'notify_waiting' => '1',
                 'notify_approved' => '1',
                 'notify_rejected' => '0',
@@ -73,30 +62,17 @@ class NotificationRecipientSettingsTest extends TestCase
 
         $recipient = NotificationRecipient::query()->where('email', 'notify.ops@example.com')->first();
         $this->assertNotNull($recipient);
+        $this->assertSame('Ops User', $recipient->name);
+        $this->assertTrue((bool) $recipient->notify_waiting);
+        $this->assertTrue((bool) $recipient->notify_approved);
+        $this->assertFalse((bool) $recipient->notify_rejected);
 
         $this->actingAs($admin)
-            ->put(route('admin.notifications.update', $recipient->id), [
-                'user_id' => (int) $directorUser->id,
-                'notify_waiting' => '0',
-                'notify_approved' => '1',
-                'notify_rejected' => '1',
-                'is_active' => '1',
-            ])
-            ->assertRedirect();
-
-        $updated = NotificationRecipient::query()->find($recipient->id);
-        $this->assertNotNull($updated);
-        $this->assertSame('notify.director@example.com', $updated->email);
-        $this->assertFalse((bool) $updated->notify_waiting);
-        $this->assertTrue((bool) $updated->notify_approved);
-        $this->assertTrue((bool) $updated->notify_rejected);
-
-        $this->actingAs($admin)
-            ->delete(route('admin.notifications.destroy', $updated->id))
+            ->delete(route('admin.notifications.destroy', $recipient->id))
             ->assertRedirect();
 
         $this->assertDatabaseMissing('notification_recipients', [
-            'id' => $updated->id,
+            'id' => $recipient->id,
         ]);
     }
 
@@ -106,22 +82,6 @@ class NotificationRecipientSettingsTest extends TestCase
             'role' => 'admin',
             'email' => 'admin.bulk@example.com',
         ]);
-
-        $directorUser = User::withoutEvents(function () {
-            return User::factory()->create([
-                'role' => 'director',
-                'name' => 'Dir Bulk',
-                'email' => 'dir.bulk@example.com',
-            ]);
-        });
-
-        $operatorUser = User::withoutEvents(function () {
-            return User::factory()->create([
-                'role' => 'operator',
-                'name' => 'Ops Bulk',
-                'email' => 'ops.bulk@example.com',
-            ]);
-        });
 
         $first = NotificationRecipient::query()->create([
             'email' => 'first.old@example.com',
@@ -160,14 +120,16 @@ class NotificationRecipientSettingsTest extends TestCase
             ->post(route('admin.notifications.bulkUpdate'), [
                 'recipients' => [
                     (string) $first->id => [
-                        'user_id' => (string) $directorUser->id,
+                        'email' => 'first.new@example.com',
+                        'name' => 'New First',
                         'notify_waiting' => '1',
                         'notify_approved' => '0',
                         'notify_rejected' => '0',
                         'is_active' => '1',
                     ],
                     (string) $second->id => [
-                        'user_id' => (string) $operatorUser->id,
+                        'email' => 'second.new@example.com',
+                        'name' => 'New Second',
                         'notify_waiting' => '0',
                         'notify_approved' => '1',
                         'notify_rejected' => '1',
@@ -184,15 +146,15 @@ class NotificationRecipientSettingsTest extends TestCase
         $first->refresh();
         $second->refresh();
 
-        $this->assertSame('dir.bulk@example.com', $first->email);
-        $this->assertSame('Dir Bulk', $first->name);
+        $this->assertSame('first.new@example.com', $first->email);
+        $this->assertSame('New First', $first->name);
         $this->assertTrue((bool) $first->notify_waiting);
         $this->assertFalse((bool) $first->notify_approved);
         $this->assertFalse((bool) $first->notify_rejected);
         $this->assertTrue((bool) $first->is_active);
 
-        $this->assertSame('ops.bulk@example.com', $second->email);
-        $this->assertSame('Ops Bulk', $second->name);
+        $this->assertSame('second.new@example.com', $second->email);
+        $this->assertSame('New Second', $second->name);
         $this->assertFalse((bool) $second->notify_waiting);
         $this->assertTrue((bool) $second->notify_approved);
         $this->assertTrue((bool) $second->notify_rejected);

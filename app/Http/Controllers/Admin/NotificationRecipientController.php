@@ -4,10 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\NotificationRecipient;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 class NotificationRecipientController extends Controller
 {
@@ -20,47 +18,23 @@ class NotificationRecipientController extends Controller
             ->orderBy('email')
             ->get();
 
-        $users = User::query()
-            ->select(['id', 'name', 'username', 'email', 'role'])
-            ->orderBy('role')
-            ->orderBy('name')
-            ->get();
-
-        $takenEmails = $recipients
-            ->pluck('email')
-            ->map(fn ($email) => strtolower(trim((string) $email)))
-            ->filter(fn ($email) => $email !== '')
-            ->values()
-            ->all();
-
-        $availableUsers = $users
-            ->filter(fn (User $user) => !in_array(strtolower(trim((string) $user->email)), $takenEmails, true))
-            ->values();
-
         return view('admin.notifications.index', [
             'recipients' => $recipients,
             'maxRecipients' => self::MAX_RECIPIENTS,
-            'users' => $users,
-            'availableUsers' => $availableUsers,
         ]);
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'user_id' => [
-                'required',
-                'integer',
-                Rule::exists('users', 'id'),
-            ],
             'email'    => ['required', 'email', 'max:191'],
+            'name'     => ['nullable', 'string', 'max:120'],
             'notify_waiting' => ['nullable', 'boolean'],
             'notify_approved' => ['nullable', 'boolean'],
             'notify_rejected' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $selectedUser = User::query()->findOrFail((int) $data['user_id']);
         $targetEmail = strtolower(trim($data['email']));
         if ($targetEmail === '') {
             return back()->withInput()->with('error', 'Email tidak boleh kosong.');
@@ -76,7 +50,7 @@ class NotificationRecipientController extends Controller
         }
 
         if ($alreadyExists) {
-            return back()->withInput()->with('error', 'Akun user ini sudah terdaftar sebagai recipient.');
+            return back()->withInput()->with('error', 'Email ini sudah terdaftar sebagai recipient.');
         }
 
         [$waiting, $approved, $rejected] = $this->normalizeStatusFlags($request);
@@ -86,7 +60,7 @@ class NotificationRecipientController extends Controller
 
         NotificationRecipient::query()->create([
             'email' => $targetEmail,
-            'name' => $this->cleanText((string) ($selectedUser->name ?? ''), 120) ?: null,
+            'name' => $this->cleanText((string) ($data['name'] ?? ''), 120) ?: null,
             'notify_waiting' => $waiting,
             'notify_approved' => $approved,
             'notify_rejected' => $rejected,
@@ -98,53 +72,6 @@ class NotificationRecipientController extends Controller
         return back()->with('success', 'Recipient email notifikasi berhasil ditambahkan.');
     }
 
-    public function update(Request $request, NotificationRecipient $recipient)
-    {
-        $data = $request->validate([
-            'user_id' => [
-                'required',
-                'integer',
-                Rule::exists('users', 'id'),
-            ],
-            'notify_waiting' => ['nullable', 'boolean'],
-            'notify_approved' => ['nullable', 'boolean'],
-            'notify_rejected' => ['nullable', 'boolean'],
-            'is_active' => ['nullable', 'boolean'],
-        ]);
-
-        $selectedUser = User::query()->findOrFail((int) $data['user_id']);
-        $targetEmail = strtolower(trim((string) $selectedUser->email));
-        if ($targetEmail === '') {
-            return back()->with('error', 'Email akun user belum valid.');
-        }
-
-        $usedByOther = NotificationRecipient::query()
-            ->whereRaw('LOWER(email) = ?', [$targetEmail])
-            ->where('id', '!=', (int) $recipient->id)
-            ->exists();
-
-        if ($usedByOther) {
-            return back()->with('error', 'Akun user tersebut sudah dipakai recipient lain.');
-        }
-
-        [$waiting, $approved, $rejected] = $this->normalizeStatusFlags($request);
-        if (!$waiting && !$approved && !$rejected) {
-            return back()->with('error', 'Pilih minimal satu status notifikasi.');
-        }
-
-        $recipient->fill([
-            'email' => $targetEmail,
-            'name' => $this->cleanText((string) ($selectedUser->name ?? ''), 120) ?: null,
-            'notify_waiting' => $waiting,
-            'notify_approved' => $approved,
-            'notify_rejected' => $rejected,
-            'is_active' => $request->boolean('is_active', false),
-            'updated_by' => (int) auth()->id(),
-        ]);
-        $recipient->save();
-
-        return back()->with('success', 'Recipient email notifikasi berhasil diupdate.');
-    }
 
     public function bulkUpdate(Request $request)
     {
@@ -171,17 +98,6 @@ class NotificationRecipientController extends Controller
             return back()->with('error', 'Sebagian recipient tidak ditemukan. Muat ulang halaman lalu coba lagi.');
         }
 
-        $userIds = collect($rawRows)
-            ->map(fn ($row) => (int) (($row['user_id'] ?? 0)))
-            ->filter(fn (int $id) => $id > 0)
-            ->unique()
-            ->values();
-
-        $usersById = User::query()
-            ->whereIn('id', $userIds->all())
-            ->get()
-            ->keyBy('id');
-
         $prepared = [];
         $deleteRecipientIds = [];
         $targetEmails = [];
@@ -194,22 +110,12 @@ class NotificationRecipientController extends Controller
                 continue;
             }
 
-            $userId = (int) ($row['user_id'] ?? 0);
-            if ($userId <= 0) {
-                return back()->with('error', 'Pilih akun user pada semua recipient sebelum menyimpan.');
-            }
-
-            /** @var User|null $selectedUser */
-            $selectedUser = $usersById->get($userId);
-            if (!$selectedUser) {
-                return back()->with('error', 'Akun user pada recipient tidak valid. Muat ulang halaman lalu coba lagi.');
-            }
-
-            // Use the manually entered email from the form
             $targetEmail = strtolower(trim((string) ($row['email'] ?? '')));
             if ($targetEmail === '' || filter_var($targetEmail, FILTER_VALIDATE_EMAIL) === false) {
                 return back()->with('error', 'Email tidak valid pada salah satu recipient.');
             }
+
+            $targetName = $this->cleanText((string) ($row['name'] ?? ''), 120) ?: null;
 
             $waiting = $this->toBool($row['notify_waiting'] ?? false);
             $approved = $this->toBool($row['notify_approved'] ?? false);
@@ -221,7 +127,7 @@ class NotificationRecipientController extends Controller
 
             $prepared[$recipientId] = [
                 'email' => $targetEmail,
-                'name' => $this->cleanText((string) ($selectedUser->name ?? ''), 120) ?: null,
+                'name' => $targetName,
                 'notify_waiting' => $waiting,
                 'notify_approved' => $approved,
                 'notify_rejected' => $rejected,
@@ -234,7 +140,7 @@ class NotificationRecipientController extends Controller
             $emailUsage = array_count_values($targetEmails);
             foreach ($emailUsage as $email => $count) {
                 if ($count > 1) {
-                    return back()->with('error', 'Email user duplikat terdeteksi di form: ' . $email);
+                    return back()->with('error', 'Email duplikat terdeteksi di form: ' . $email);
                 }
             }
 
