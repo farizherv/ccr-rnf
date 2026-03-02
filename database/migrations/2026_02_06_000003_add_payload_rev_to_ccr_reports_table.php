@@ -11,11 +11,11 @@ return new class extends Migration
         Schema::table('ccr_reports', function (Blueprint $table) {
             // last-write-wins: simpan "client timestamp" terakhir yang diterapkan
             if (!Schema::hasColumn('ccr_reports', 'parts_payload_rev')) {
-                $table->unsignedBigInteger('parts_payload_rev')->nullable()->after('parts_payload');
+                $table->unsignedBigInteger('parts_payload_rev')->nullable();
             }
 
             if (!Schema::hasColumn('ccr_reports', 'detail_payload_rev')) {
-                $table->unsignedBigInteger('detail_payload_rev')->nullable()->after('detail_payload');
+                $table->unsignedBigInteger('detail_payload_rev')->nullable();
             }
         });
     }

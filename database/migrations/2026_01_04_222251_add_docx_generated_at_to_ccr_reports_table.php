@@ -12,7 +12,7 @@ return new class extends Migration {
         }
 
         Schema::table('ccr_reports', function (Blueprint $table) {
-            $table->timestamp('docx_generated_at')->nullable()->after('docx_path');
+            $table->timestamp('docx_generated_at')->nullable();
         });
     }
 

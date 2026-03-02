@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ccr_reports', function (Blueprint $table) {
-            $table->unsignedBigInteger('created_by')->nullable()->after('id');
+            $table->unsignedBigInteger('created_by')->nullable();
             $table->index('created_by', 'ccr_reports_created_by_idx');
         });
     }

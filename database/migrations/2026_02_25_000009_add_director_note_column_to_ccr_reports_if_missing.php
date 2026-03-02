@@ -14,7 +14,7 @@ return new class extends Migration
 
         if (!Schema::hasColumn('ccr_reports', 'director_note')) {
             Schema::table('ccr_reports', function (Blueprint $table) {
-                $table->text('director_note')->nullable()->after('review_note');
+                $table->text('director_note')->nullable();
             });
         }
     }

@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ccr_drafts', function (Blueprint $table) {
-            $table->string('client_key', 120)->nullable()->after('type');
+            $table->string('client_key', 120)->nullable();
             $table->unique(['user_id', 'type', 'client_key'], 'ccr_drafts_user_type_client_unq');
         });
     }

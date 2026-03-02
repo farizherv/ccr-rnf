@@ -10,19 +10,19 @@ return new class extends Migration
     {
         Schema::table('ccr_reports', function (Blueprint $table) {
             if (!Schema::hasColumn('ccr_reports', 'parts_payload')) {
-                $table->longText('parts_payload')->nullable()->after('engine_photos');
+                $table->longText('parts_payload')->nullable();
             }
 
             if (!Schema::hasColumn('ccr_reports', 'detail_payload')) {
-                $table->longText('detail_payload')->nullable()->after('parts_payload');
+                $table->longText('detail_payload')->nullable();
             }
 
             if (!Schema::hasColumn('ccr_reports', 'template_key')) {
-                $table->string('template_key', 80)->nullable()->after('detail_payload');
+                $table->string('template_key', 80)->nullable();
             }
 
             if (!Schema::hasColumn('ccr_reports', 'template_version')) {
-                $table->unsignedInteger('template_version')->nullable()->after('template_key');
+                $table->unsignedInteger('template_version')->nullable();
             }
         });
     }

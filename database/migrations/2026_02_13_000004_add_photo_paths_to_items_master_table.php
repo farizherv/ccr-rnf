@@ -14,7 +14,7 @@ return new class extends Migration
 
         if (!Schema::hasColumn('items_master', 'photo_paths')) {
             Schema::table('items_master', function (Blueprint $table) {
-                $table->longText('photo_paths')->nullable()->after('sales_price');
+                $table->longText('photo_paths')->nullable();
             });
         }
     }
