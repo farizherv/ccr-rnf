@@ -85,7 +85,14 @@ class InboxAlertDispatcher
         }
 
         if ($sentTotal <= 0) {
-            throw new RuntimeException('All notification channels failed for inbox_message_id=' . (int) $message->id);
+            Log::warning('All notification channels failed', [
+                'inbox_message_id' => (int) $message->id,
+                'user_id' => (int) $recipient->id,
+                'status' => $status,
+                'mail_attempted' => (int) $mailStats['attempted'],
+                'mail_failed' => (int) $mailStats['failed'],
+            ]);
+            return;
         }
 
         Log::info('CCR notification dispatched', [
