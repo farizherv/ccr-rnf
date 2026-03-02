@@ -138,7 +138,7 @@
                                             type="email"
                                             name="recipients[{{ $recipient->id }}][email]"
                                             class="input"
-                                            value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) ($recipientUser->email ?? $recipient->email)))) }}"
+                                            value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) ($recipient->email ?: ($recipientUser->email ?? ''))))) }}"
                                             @disabled(!$listEditMode)
                                             required
                                         >
@@ -396,8 +396,9 @@
     const page = document.querySelector('[data-page="notification-recipients"]');
     if (!page) return;
 
-    const applySelectionMeta = (selectEl) => {
+    const applySelectionMeta = (selectEl, opts) => {
         if (!selectEl) return;
+        const skipEmail = opts && opts.skipEmail;
         const selected = selectEl.options[selectEl.selectedIndex];
         const emailTargetId = selectEl.dataset.emailTarget || '';
         const roleTargetId = selectEl.dataset.roleTarget || '';
@@ -407,7 +408,7 @@
         const email = selected ? (selected.dataset.email || '') : '';
         const role = selected ? (selected.dataset.role || '') : '';
 
-        if (emailInput) emailInput.value = email;
+        if (emailInput && !skipEmail) emailInput.value = email;
         if (roleNode) {
             roleNode.textContent = role || '-';
             roleNode.classList.toggle('role-empty', !role);
@@ -486,14 +487,17 @@
     };
 
     page.querySelectorAll('.js-user-select').forEach((selectEl) => {
-        applySelectionMeta(selectEl);
-        if (selectEl.id === 'addUserId') {
+        const isAddForm = selectEl.id === 'addUserId';
+        // On page load: only auto-fill email for the add form, NOT for existing rows
+        applySelectionMeta(selectEl, { skipEmail: !isAddForm });
+        if (isAddForm) {
             const selected = selectEl.options[selectEl.selectedIndex];
             applyDefaultFlagsByRole(selected ? (selected.dataset.role || '') : '');
         }
+        // On change: always auto-fill email (user is actively switching)
         selectEl.addEventListener('change', () => {
             applySelectionMeta(selectEl);
-            if (selectEl.id === 'addUserId') {
+            if (isAddForm) {
                 const selected = selectEl.options[selectEl.selectedIndex];
                 applyDefaultFlagsByRole(selected ? (selected.dataset.role || '') : '');
             }
