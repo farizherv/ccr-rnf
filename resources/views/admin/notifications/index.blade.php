@@ -51,11 +51,11 @@
                 </div>
                 <div class="field">
                     <label for="addEmail">Email</label>
-                    <input id="addEmail" type="email" class="input" value="" readonly>
+                    <input id="addEmail" type="email" name="email" class="input" value="{{ old('email') }}" placeholder="email@example.com" required>
                     <div class="meta-row">Role: <span id="addRoleBadge" class="role-pill role-empty">-</span></div>
                 </div>
             </div>
-            <p class="hint-text">Nama dan email mengikuti akun user. Tidak perlu isi nama manual lagi.</p>
+            <p class="hint-text">Email otomatis terisi dari akun user, tapi bisa diubah manual.</p>
 
             <div class="flag-row">
                 <label class="flag"><input type="hidden" name="notify_waiting" value="0"><input id="addNotifyWaiting" type="checkbox" name="notify_waiting" value="1" {{ old('notify_waiting', '1') ? 'checked' : '' }}> Waiting</label>
@@ -136,9 +136,11 @@
                                         <input
                                             id="email-{{ $recipient->id }}"
                                             type="email"
+                                            name="recipients[{{ $recipient->id }}][email]"
                                             class="input"
-                                            value="{{ strtolower(trim((string) ($recipientUser->email ?? $recipient->email))) }}"
-                                            readonly
+                                            value="{{ old('recipients.' . $recipient->id . '.email', strtolower(trim((string) ($recipientUser->email ?? $recipient->email)))) }}"
+                                            @disabled(!$listEditMode)
+                                            required
                                         >
                                         <div class="meta-row">
                                             Role:
@@ -443,7 +445,7 @@
     const listRows = listBox ? listBox.querySelector('.rows') : null;
     const bulkUpdateForm = document.getElementById('bulkUpdateRecipientsForm');
     const editableNodes = listBox
-        ? Array.from(listBox.querySelectorAll('.row-item select, .row-item input[type="checkbox"], .row-item .btn-delete'))
+        ? Array.from(listBox.querySelectorAll('.row-item select, .row-item input[type=\"checkbox\"], .row-item input[type=\"email\"], .row-item .btn-delete'))
         : [];
     const markDeleteButtons = listBox
         ? Array.from(listBox.querySelectorAll('.js-mark-delete'))

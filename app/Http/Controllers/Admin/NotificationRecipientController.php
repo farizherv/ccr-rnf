@@ -53,6 +53,7 @@ class NotificationRecipientController extends Controller
                 'integer',
                 Rule::exists('users', 'id'),
             ],
+            'email'    => ['required', 'email', 'max:191'],
             'notify_waiting' => ['nullable', 'boolean'],
             'notify_approved' => ['nullable', 'boolean'],
             'notify_rejected' => ['nullable', 'boolean'],
@@ -60,9 +61,9 @@ class NotificationRecipientController extends Controller
         ]);
 
         $selectedUser = User::query()->findOrFail((int) $data['user_id']);
-        $targetEmail = strtolower(trim((string) $selectedUser->email));
+        $targetEmail = strtolower(trim($data['email']));
         if ($targetEmail === '') {
-            return back()->withInput()->with('error', 'Email akun user belum valid.');
+            return back()->withInput()->with('error', 'Email tidak boleh kosong.');
         }
 
         $currentCount = NotificationRecipient::query()->count();
@@ -204,9 +205,10 @@ class NotificationRecipientController extends Controller
                 return back()->with('error', 'Akun user pada recipient tidak valid. Muat ulang halaman lalu coba lagi.');
             }
 
-            $targetEmail = strtolower(trim((string) $selectedUser->email));
+            // Use the manually entered email from the form
+            $targetEmail = strtolower(trim((string) ($row['email'] ?? '')));
             if ($targetEmail === '' || filter_var($targetEmail, FILTER_VALIDATE_EMAIL) === false) {
-                return back()->with('error', 'Ada akun user dengan email tidak valid.');
+                return back()->with('error', 'Email tidak valid pada salah satu recipient.');
             }
 
             $waiting = $this->toBool($row['notify_waiting'] ?? false);
