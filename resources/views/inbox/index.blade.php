@@ -8,7 +8,7 @@
     $backUrl = match ($role) {
         'director' => route('director.monitoring'),
         'admin', 'operator' => route('ccr.index'),
-        default => route('dashboard'),
+        default => route('ccr.index'),
     };
 
     $roleLabel = ($role === 'operator') ? 'PLANNER' : strtoupper($role);
