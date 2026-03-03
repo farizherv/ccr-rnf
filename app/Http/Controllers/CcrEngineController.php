@@ -299,7 +299,7 @@ class CcrEngineController extends Controller
 
             foreach ($uploadedPhotos as $photo) {
                 if (!$photo instanceof UploadedFile || !$photo->isValid()) continue;
-                $path = $photo->store("$folder/photos", 'public');
+                $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                 CcrPhoto::create([
                     'ccr_item_id' => $item->id,
                     'path' => $path,
@@ -640,7 +640,7 @@ class CcrEngineController extends Controller
                     data_get($uploadedExistingItems, $itemId . '.photos')
                 );
                 foreach ($uploadedPhotos as $photo) {
-                    $path = $photo->store("$folder/photos", 'public');
+                    $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                     CcrPhoto::create([
                         'ccr_item_id' => $item->id,
                         'path'        => $path,
@@ -668,7 +668,7 @@ class CcrEngineController extends Controller
                 $changed = true;
 
                 foreach ($newItemPhotos as $photo) {
-                    $path = $photo->store("$folder/photos", 'public');
+                    $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                     CcrPhoto::create([
                         'ccr_item_id' => $item->id,
                         'path'        => $path,

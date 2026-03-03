@@ -52,6 +52,8 @@ class ExportPartsLabourController extends Controller
         $type = $this->normalizeExportType($type);
         $this->tuneRuntimeForLargeExport();
         $broker = $this->jobBroker();
+        $queuedNotReady = false;
+        $retryAfter = 3;
 
         if ($broker->queueEnabled()) {
             $report = CcrReport::findOrFail($id);
@@ -60,10 +62,14 @@ class ExportPartsLabourController extends Controller
             $cachedPath = $this->resolveCachedExportPath($report, $type, $templatePath);
 
             if (!is_file($cachedPath)) {
-                // Keep queue warming for burst traffic, but never block direct user download.
-                // If queue worker is down/stuck, request still proceeds via inline generation below.
                 $broker->enqueue('parts', $type, $id);
+                $queuedNotReady = true;
+                $retryAfter = $broker->retryAfterSeconds('parts', $type, $id);
             }
+        }
+
+        if ($queuedNotReady && !$this->partsInlineFallbackEnabled()) {
+            return $this->queuedPartsNotReadyResponse($retryAfter);
         }
 
         return $this->withReportLock($type, $id, function () use ($id, $type) {
@@ -119,6 +125,27 @@ class ExportPartsLabourController extends Controller
             $this->cleanupStaleExports(dirname($cachedPath), $cachedPath);
             return $cachedPath;
         });
+    }
+
+    private function partsInlineFallbackEnabled(): bool
+    {
+        $raw = env('CCR_HEAVY_PARTS_INLINE_FALLBACK');
+        if ($raw === null || $raw === '') {
+            return app()->environment('local');
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function queuedPartsNotReadyResponse(int $retryAfter): \Illuminate\Http\Response
+    {
+        return response('Export Parts & Labour sedang diproses di antrian. Silakan coba lagi sebentar.', 503, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'Retry-After' => (string) max(3, $retryAfter),
+        ]);
     }
 
     private function buildWorkbook(int $id, string $expectedType, ?string $templatePath = null): array

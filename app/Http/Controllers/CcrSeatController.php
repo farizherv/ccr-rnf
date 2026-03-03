@@ -313,7 +313,7 @@ class CcrSeatController extends Controller
 
             foreach ($uploadedPhotos as $photo) {
                 if (!$photo instanceof UploadedFile || !$photo->isValid()) continue;
-                $path = $photo->store("$folder/photos", 'public');
+                $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                 CcrPhoto::create([
                     'ccr_item_id' => $item->id,
                     'path'        => $path,
@@ -709,7 +709,7 @@ class CcrSeatController extends Controller
                     data_get($uploadedExistingItems, $itemId . '.photos')
                 );
                 foreach ($uploadedPhotos as $photo) {
-                    $path = $photo->store("$folder/photos", 'public');
+                    $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                     CcrPhoto::create([
                         'ccr_item_id' => $item->id,
                         'path'        => $path,
@@ -736,7 +736,7 @@ class CcrSeatController extends Controller
                 $changed = true;
 
                 foreach ($newItemPhotos as $photo) {
-                    $path = $photo->store("$folder/photos", 'public');
+                    $path = $this->reportService->storeNormalizedPhoto($photo, "$folder/photos");
                     CcrPhoto::create([
                         'ccr_item_id' => $item->id,
                         'path'        => $path,
@@ -2100,8 +2100,8 @@ class CcrSeatController extends Controller
                 if ($availableSlots <= 0) {
                     break;
                 }
-                if (!$file || !method_exists($file, 'isValid') || !$file->isValid()) continue;
-                $path = $file->store("$folder/seat_items", 'public');
+                if (!$file instanceof UploadedFile || !$file->isValid()) continue;
+                $path = $this->reportService->storeNormalizedPhoto($file, "$folder/seat_items");
                 $rows[$index[$uid]]['photo_paths'][] = $path;
                 $availableSlots--;
             }

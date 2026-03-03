@@ -361,6 +361,126 @@ class CcrReportService
         return $out;
     }
 
+    /**
+     * Store photo to public disk after server-side normalization.
+     * - Longest side max 1600px
+     * - Re-encode to JPEG (quality 82) to reduce payload size
+     * - Metadata stripped by re-encoding
+     */
+    public function storeNormalizedPhoto(
+        UploadedFile $file,
+        string $directory,
+        int $maxLongestSide = 1600,
+        int $jpegQuality = 82
+    ): string {
+        $directory = trim($directory, '/');
+        if ($directory === '') {
+            $directory = 'uploads';
+        }
+
+        $disk = Storage::disk('public');
+        $disk->makeDirectory($directory);
+
+        if (!$file->isValid()) {
+            return $file->store($directory, 'public');
+        }
+
+        $gdReady = function_exists('imagecreatetruecolor')
+            && function_exists('imagecopyresampled')
+            && function_exists('imagejpeg');
+        if (!$gdReady) {
+            return $file->store($directory, 'public');
+        }
+
+        $source = $this->createImageResourceFromUploadedFile($file);
+        if (!$source) {
+            return $file->store($directory, 'public');
+        }
+
+        $srcWidth = max(1, (int) @imagesx($source));
+        $srcHeight = max(1, (int) @imagesy($source));
+        [$dstWidth, $dstHeight] = $this->fitWithinLongestSide($srcWidth, $srcHeight, $maxLongestSide);
+
+        $canvas = @imagecreatetruecolor($dstWidth, $dstHeight);
+        if (!$canvas) {
+            @imagedestroy($source);
+            return $file->store($directory, 'public');
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $dstWidth, $dstHeight, $white);
+        imagecopyresampled($canvas, $source, 0, 0, 0, 0, $dstWidth, $dstHeight, $srcWidth, $srcHeight);
+
+        $safeQuality = max(60, min(95, $jpegQuality));
+        $baseName = pathinfo((string) $file->hashName(), PATHINFO_FILENAME);
+        if ($baseName === '') {
+            $baseName = 'img_' . str_replace('.', '', uniqid('', true));
+        }
+
+        $relativePath = $directory . '/' . $baseName . '-opt.jpg';
+        if ($disk->exists($relativePath)) {
+            $relativePath = $directory . '/' . $baseName . '-opt-' . str_replace('.', '', uniqid('', true)) . '.jpg';
+        }
+
+        $absolutePath = $disk->path($relativePath);
+        $saved = @imagejpeg($canvas, $absolutePath, $safeQuality);
+
+        @imagedestroy($source);
+        @imagedestroy($canvas);
+
+        if ($saved) {
+            return $relativePath;
+        }
+
+        return $file->store($directory, 'public');
+    }
+
+    private function createImageResourceFromUploadedFile(UploadedFile $file): mixed
+    {
+        $path = $file->getRealPath();
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return null;
+        }
+
+        $mime = strtolower((string) ($file->getMimeType() ?? ''));
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+
+        if (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg') || $ext === 'jpg' || $ext === 'jpeg') {
+            return function_exists('imagecreatefromjpeg') ? @imagecreatefromjpeg($path) : null;
+        }
+
+        if (str_contains($mime, 'png') || $ext === 'png') {
+            return function_exists('imagecreatefrompng') ? @imagecreatefrompng($path) : null;
+        }
+
+        if (str_contains($mime, 'webp') || $ext === 'webp') {
+            return function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{int,int}
+     */
+    private function fitWithinLongestSide(int $width, int $height, int $maxLongestSide): array
+    {
+        $width = max(1, $width);
+        $height = max(1, $height);
+        $maxLongestSide = max(320, $maxLongestSide);
+
+        $longest = max($width, $height);
+        if ($longest <= $maxLongestSide) {
+            return [$width, $height];
+        }
+
+        $scale = $maxLongestSide / $longest;
+        $newWidth = max(1, (int) round($width * $scale));
+        $newHeight = max(1, (int) round($height * $scale));
+
+        return [$newWidth, $newHeight];
+    }
+
     // =====================================================================
     // Role helpers
     // =====================================================================

@@ -170,7 +170,7 @@ class ExportSeatController extends Controller
     {
         $raw = env('CCR_HEAVY_PREVIEW_INLINE_FALLBACK');
         if ($raw === null || $raw === '') {
-            return true;
+            return app()->environment('local');
         }
 
         $enabled = filter_var($raw, FILTER_VALIDATE_BOOLEAN);
@@ -180,6 +180,27 @@ class ExportSeatController extends Controller
 
         // Lokal tetap boleh fallback inline supaya preview tidak mentok saat worker belum jalan.
         return app()->environment('local');
+    }
+
+    private function wordInlineFallbackEnabled(): bool
+    {
+        $raw = env('CCR_HEAVY_WORD_INLINE_FALLBACK');
+        if ($raw === null || $raw === '') {
+            return app()->environment('local');
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function queuedWordNotReadyResponse(int $reportId): \Illuminate\Http\Response
+    {
+        return response('File Word sedang diproses di antrian. Silakan coba lagi sebentar.', 503, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'Retry-After' => (string) $this->jobBroker()->retryAfterSeconds('word', 'seat', $reportId),
+        ]);
     }
 
     private function tryInlinePreviewFallback(CcrReport $report): ?string
@@ -867,6 +888,11 @@ class ExportSeatController extends Controller
         if ($this->jobBroker()->queueEnabled()) {
             if ($this->shouldRegenerate($report) || !$report->docx_path || !Storage::disk('public')->exists($report->docx_path)) {
                 $this->queueWordBuild((int) $report->id);
+
+                if (!$this->wordInlineFallbackEnabled()) {
+                    return $this->queuedWordNotReadyResponse((int) $report->id);
+                }
+
                 try {
                     $abs = $this->warmWordExport((int) $report->id);
                     $this->jobBroker()->markSuccess('word', 'seat', (int) $report->id);
@@ -879,13 +905,7 @@ class ExportSeatController extends Controller
 
                     $report->refresh();
                     if (!$report->docx_path || !Storage::disk('public')->exists($report->docx_path)) {
-                        return response('File Word sedang diproses di antrian. Silakan coba lagi sebentar.', 503, [
-                            'Content-Type' => 'text/plain; charset=UTF-8',
-                            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
-                            'Pragma' => 'no-cache',
-                            'Expires' => '0',
-                            'Retry-After' => (string) $this->jobBroker()->retryAfterSeconds('word', 'seat', (int) $report->id),
-                        ]);
+                        return $this->queuedWordNotReadyResponse((int) $report->id);
                     }
 
                     $abs = Storage::disk('public')->path($report->docx_path);
