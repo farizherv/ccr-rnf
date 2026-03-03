@@ -16,6 +16,31 @@
 
 ---
 
+## Quick Runbook (Otomatis)
+
+Kalau ingin deploy cepat dari laptop (build + test + upload + bootstrap NAS), pakai script ini:
+
+```bash
+cd ~/Projects/ccr-rnf
+chmod +x scripts/synology/deploy_ds220j.sh scripts/synology/nas_post_deploy.sh
+
+scripts/synology/deploy_ds220j.sh \
+  --nas-host admin@192.168.1.18 \
+  --nas-app-dir /volume1/web/ccr-rnf \
+  --php-bin php82 \
+  --web-user http
+```
+
+Jika hanya mau upload file tanpa bootstrap NAS:
+
+```bash
+scripts/synology/deploy_ds220j.sh --sync-only
+```
+
+Referensi lengkap script: `scripts/synology/README.md`
+
+---
+
 ## Step 1 — Install Packages di DSM
 
 Masuk **DSM**: `http://192.168.1.18:5000` → **Package Center**, install:
@@ -160,6 +185,8 @@ php82 /volume1/web/ccr-rnf/artisan queue:work database \
   --sleep=2 --tries=2 --timeout=180 \
   --max-jobs=200 --max-time=3600 --memory=192
 ```
+
+> Gunakan DSM Task Scheduler (auto-restart) agar worker selalu hidup.
 
 ---
 
